@@ -1,0 +1,642 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ActividadEconomica {
+  act_eco_cod         Int       @id
+  act_eco_dsc          String    @db.VarChar(255)
+  act_eco_usuario_alta String?   @db.VarChar(100)
+  act_eco_fecha_alta   DateTime? @default(now()) @db.Timestamptz
+  empresas            Empresa[]
+
+  @@map("actividad_economica")
+}
+
+model Departamento {
+  dep_cod          Int       @id
+  dep_dsc          String    @db.VarChar(100)
+  dep_usuario_alta String?   @db.VarChar(100)
+  dep_fecha_alta   DateTime? @default(now()) @db.Timestamptz
+  distritos        Distrito[]
+  empresas         Empresa[]
+  depositos        Deposito[]
+
+  @@map("departamentos")
+}
+
+model Distrito {
+  dis_dep_cod      Int
+  dis_cod          Int
+  dis_dsc          String    @db.VarChar(100)
+  dis_usuario_alta String?   @db.VarChar(100)
+  dis_fecha_alta   DateTime? @default(now()) @db.Timestamptz
+  departamento     Departamento @relation(fields: [dis_dep_cod], references: [dep_cod])
+  ciudades         Ciudad[]
+  empresas         Empresa[]
+  depositos        Deposito[]
+
+  @@id([dis_dep_cod, dis_cod])
+  @@map("distritos")
+}
+
+model Ciudad {
+  ciu_dep_cod Int
+  ciu_dis_cod Int
+  ciu_cod     Int
+  ciu_dsc     String @db.VarChar(100)
+  distrito    Distrito @relation(fields: [ciu_dep_cod, ciu_dis_cod], references: [dis_dep_cod, dis_cod])
+  barrios     Barrio[]
+  empresas    Empresa[]
+  depositos   Deposito[]
+
+  @@id([ciu_dep_cod, ciu_dis_cod, ciu_cod])
+  @@map("ciudades")
+}
+
+model Barrio {
+  bar_dep_cod Int
+  bar_dis_cod Int
+  bar_ciu_cod Int
+  bar_cod     Int
+  bar_dsc     String @db.VarChar(100)
+  ciudad      Ciudad @relation(fields: [bar_dep_cod, bar_dis_cod, bar_ciu_cod], references: [ciu_dep_cod, ciu_dis_cod, ciu_cod])
+  empresas    Empresa[]
+  depositos   Deposito[]
+
+  @@id([bar_dep_cod, bar_dis_cod, bar_ciu_cod, bar_cod])
+  @@map("barrios")
+}
+
+model Empresa {
+  empresa_cod          Int       @id @default(autoincrement())
+  empresa_nom          String?   @db.VarChar(50)
+  empresa_ruc          String?   @db.VarChar(15)
+  empresa_estado       String?   @db.VarChar(1)
+  empresa_saldo        Decimal?  @db.Decimal(15, 2)
+  empresa_usuario_alta String?   @db.VarChar(100)
+  empresa_fecha_alta   DateTime? @default(now()) @db.Timestamptz
+  empresa_act_eco      Int?
+  empresa_dep          Int?
+  empresa_dis          Int?
+  empresa_ciu          Int?
+  empresa_bar          Int?
+  empresa_nom_fan      String?   @db.VarChar(100)
+  empresa_mail         String?   @db.VarChar(100)
+  empresa_dir          String?   @db.VarChar(200)
+  empresa_tel          String?   @db.VarChar(20)
+  empresa_propietario  String?   @db.VarChar(50)
+
+  actividad            ActividadEconomica? @relation(fields: [empresa_act_eco], references: [act_eco_cod])
+  departamento         Departamento?       @relation(fields: [empresa_dep], references: [dep_cod])
+  distrito             Distrito?           @relation(fields: [empresa_dep, empresa_dis], references: [dis_dep_cod, dis_cod])
+  ciudad               Ciudad?             @relation(fields: [empresa_dep, empresa_dis, empresa_ciu], references: [ciu_dep_cod, ciu_dis_cod, ciu_cod])
+  barrio               Barrio?             @relation(fields: [empresa_dep, empresa_dis, empresa_ciu, empresa_bar], references: [bar_dep_cod, bar_dis_cod, bar_ciu_cod, bar_cod])
+  
+  usuarios             Usuario[]
+
+  @@map("empresa")
+}
+
+model Menu {
+  menu_cod    Int       @id @default(autoincrement())
+  menu_nombre String
+  detalles    MenuDet[]
+  perfiles    Perfil[]
+
+  @@map("menu")
+}
+
+model MenuDet {
+  menu_cod           Int
+  menu_det_cod       Int
+  menu_det_nombre    String
+  menu_det_url       String?
+  menu_det_icono     String?
+  menu_det_cod_padre Int?
+  menu_det_estado    String?
+  menu_det_det_orden Int?
+  menu_cargar_inicio Boolean @default(false)
+  
+  menu               Menu    @relation(fields: [menu_cod], references: [menu_cod])
+
+  @@id([menu_cod, menu_det_cod])
+  @@map("menu_det")
+}
+
+model Perfil {
+  perfil_cod    Int       @id @default(autoincrement())
+  perfil_nombre String
+  menu_cod      Int
+  menu          Menu      @relation(fields: [menu_cod], references: [menu_cod])
+  usuarios      Usuario[]
+  workflow      FlujoEstadoConfig[]
+
+  @@map("perfiles")
+}
+
+model Parametro {
+  par_id          Int    @id @default(autoincrement())
+  par_codigo      String @unique @db.VarChar(50)
+  par_descripcion String @db.VarChar(150)
+  par_valor       String
+  par_tenantid    Int
+
+  @@map("parametros")
+}
+
+model Sucursal {
+  suc_id        Int       @id @default(autoincrement())
+  suc_nombre    String    @db.VarChar(100)
+  suc_direccion String?   @db.VarChar(200)
+  suc_telefono  String?   @db.VarChar(50)
+  suc_estado    String?   @db.VarChar(1)
+  suc_tenantid  Int
+  usuarios      Usuario[]
+
+  @@map("sucursales")
+}
+
+model Usuario {
+  usuario_email             String    @id
+  usuario_sucursal          Int?
+  usuario_nombre            String
+  usuario_password          String
+  perfil_cod                Int
+  usuario_estado            String?
+  usuario_primer_ingreso    Boolean?
+  usuario_tenantid          Int
+  usuario_fecha_creacion    DateTime? @default(now()) @db.Timestamptz
+  usuario_imagen_url        String?   @db.VarChar(500)
+  usuario_empresa           Int
+
+  perfil                    Perfil    @relation(fields: [perfil_cod], references: [perfil_cod])
+  sucursal                  Sucursal? @relation(fields: [usuario_sucursal], references: [suc_id])
+  empresa                   Empresa   @relation(fields: [usuario_empresa], references: [empresa_cod])
+
+  @@map("usuarios")
+}
+
+model RestriccionesCampos {
+  id        Int       @id @default(autoincrement())
+  tabla     String    @db.VarChar(100)
+  columna   String    @db.VarChar(100)
+  oculto    Boolean?  @default(false)
+  editable  Boolean?  @default(true)
+  creado_en DateTime? @default(now()) @db.Timestamptz
+
+  @@map("restricciones_campos")
+}
+
+model SegEmailLog {
+  log_id           Int       @id @default(autoincrement())
+  log_fecha        DateTime? @default(now()) @db.Timestamptz
+  log_destinatario String    @db.VarChar(200)
+  log_asunto       String    @db.VarChar(200)
+  log_cuerpo       String?
+  log_estado       String?   @db.VarChar(20)
+  log_error        String?
+
+  @@map("seg_email_log")
+}
+
+model UnidadMedida {
+  uni_med_cod          Int       @id
+  uni_med_dsc          String    @db.VarChar(100)
+  uni_med_usuario_alta String?   @db.VarChar(100)
+  uni_med_fecha_alta   DateTime? @default(now()) @db.Timestamptz
+
+  @@map("unidad_medida")
+}
+
+model TipoDeposito {
+  tipo_dep_id      Int       @id
+  tipo_dep_dsc     String?   @db.VarChar(50)
+  tipo_dep_estado  Boolean?  @default(true)
+  tipo_dep_fec_alt DateTime? @default(now()) @db.Timestamptz
+  tipo_dep_usu_alt String?   @db.VarChar(150)
+  tipo_dep_fec_mod DateTime? @default(now()) @db.Timestamptz
+  tipo_dep_usu_mod String?   @db.VarChar(150)
+  depositos        Deposito[]
+
+  @@map("tipo_depositos")
+}
+
+model Deposito {
+  deposito_id         Int       @id
+  deposito_nombre     String    @db.VarChar(100)
+  deposito_dep_tipo   Int?      @db.SmallInt
+  deposito_direccion  String?   @db.Text
+  deposito_depa       Int?
+  deposito_dis        Int?
+  deposito_ciu        Int?
+  deposito_bar        Int?
+  deposito_cap_vol_m3 Decimal?  @default(0) @db.Decimal(12, 2)
+  deposito_estado     Boolean?  @default(true)
+  deposito_fec_alt    DateTime? @default(now()) @db.Timestamptz
+  deposito_usu_alt    String?   @db.VarChar(150)
+  deposito_fec_mod    DateTime? @default(now()) @db.Timestamptz
+  deposito_usu_mod    String?   @db.VarChar(150)
+  deposito_geo        Unsupported("geometry(Point, 4326)")?
+
+  tipo                TipoDeposito? @relation(fields: [deposito_dep_tipo], references: [tipo_dep_id])
+  departamento        Departamento? @relation(fields: [deposito_depa], references: [dep_cod])
+  distrito            Distrito?     @relation(fields: [deposito_depa, deposito_dis], references: [dis_dep_cod, dis_cod])
+  ciudad              Ciudad?       @relation(fields: [deposito_depa, deposito_dis, deposito_ciu], references: [ciu_dep_cod, ciu_dis_cod, ciu_cod])
+  barrio              Barrio?       @relation(fields: [deposito_depa, deposito_dis, deposito_ciu, deposito_bar], references: [bar_dep_cod, bar_dis_cod, bar_ciu_cod, bar_cod])
+  viajes              Viaje[]
+
+  @@map("depositos")
+}
+
+model TipoPersonalEntrega {
+  tip_per_ent_id           Int       @id @db.SmallInt
+  tip_per_ent_dsc          String?   @db.VarChar(50)
+  tip_per_ent_est          Boolean?  @default(true)
+  tip_per_ent_usuario_alta String    @db.VarChar(50)
+  tip_per_ent_fecha_alta   DateTime  @default(now()) @db.Timestamptz
+  tip_per_ent_usuario_mod  String?   @db.VarChar(50)
+  tip_per_ent_fecha_mod    DateTime? @db.Timestamptz
+  tip_per_ent_tenantid     Int
+  personal                 PersonalEntrega[]
+
+  @@map("tipo_personal_entrega")
+}
+
+model PersonalEntrega {
+  per_ent_documento    String    @id @db.VarChar(20)
+  per_ent_nombre       String    @db.VarChar(150)
+  per_ent_tipo         Int
+  per_ent_licencia     String?   @db.VarChar(50)
+  per_ent_cat_licencia String?   @db.VarChar(20)
+  per_ent_vto_licencia DateTime? @db.Date
+  per_ent_telefono     String?   @db.VarChar(50)
+  per_ent_direccion    String?   @db.VarChar(200)
+  per_ent_estado       String    @db.VarChar(1)
+  per_ent_usuario_alta String    @db.VarChar(50)
+  per_ent_fecha_alta   DateTime  @default(now()) @db.Timestamptz
+  per_ent_usuario_mod  String?   @db.VarChar(50)
+  per_ent_fecha_mod    DateTime? @db.Timestamptz
+
+  tipo                 TipoPersonalEntrega @relation(fields: [per_ent_tipo], references: [tip_per_ent_id])
+  viajes_chofer        Viaje[] @relation("Chofer")
+  viajes_ayudante      Viaje[] @relation("Ayudante")
+
+  @@map("personal_entrega")
+}
+
+model MovilMarca {
+  mov_mar_id           Int       @id @default(autoincrement())
+  mov_mar_nombre       String    @unique @db.VarChar(50)
+  mov_mar_estado       String    @db.VarChar(1)
+  mov_mar_usuario_alta String    @db.VarChar(50)
+  mov_mar_fecha_alta   DateTime  @default(now()) @db.Timestamptz
+  mov_mar_usuario_mod  String?   @db.VarChar(50)
+  mov_mar_fecha_mod    DateTime? @db.Timestamptz
+
+  modelos              MovilModelo[]
+  moviles              Movil[]
+
+  @@map("movil_marcas")
+}
+
+model MovilModelo {
+  mov_mod_id           Int       @id @default(autoincrement())
+  mov_mod_nombre       String    @db.VarChar(50)
+  mov_mod_marca_id     Int
+  mov_mod_estado       String    @db.VarChar(1)
+  mov_mod_usuario_alta String    @db.VarChar(50)
+  mov_mod_fecha_alta   DateTime  @default(now()) @db.Timestamptz
+  mov_mod_usuario_mod  String?   @db.VarChar(50)
+  mov_mod_fecha_mod    DateTime? @db.Timestamptz
+
+  marca                MovilMarca @relation(fields: [mov_mod_marca_id], references: [mov_mar_id])
+  moviles              Movil[]
+
+  @@map("movil_modelos")
+}
+
+model Movil {
+  movil_id               Int       @id @default(autoincrement())
+  movil_chapa            String    @unique @db.VarChar(20)
+  movil_marca_id         Int
+  movil_modelo_id        Int
+  movil_anho             Int?
+  movil_tipo             String?   @db.VarChar(50)
+  movil_capacidad_kg     Decimal?  @db.Decimal(10, 2)
+  movil_km_actual        Int?
+  movil_vto_seguro       DateTime? @db.Date
+  movil_vto_habilitacion DateTime? @db.Date
+  movil_cat_id           Int?      @db.SmallInt
+  movil_estado           String    @db.VarChar(1)
+  movil_usuario_alta     String    @db.VarChar(50)
+  movil_fecha_alta       DateTime  @default(now()) @db.Timestamptz
+  movil_usuario_mod      String?   @db.VarChar(50)
+  movil_fecha_mod        DateTime? @db.Timestamptz
+
+  marca                  MovilMarca      @relation(fields: [movil_marca_id], references: [mov_mar_id])
+  modelo                 MovilModelo     @relation(fields: [movil_modelo_id], references: [mov_mod_id])
+  categoria              MovilCategoria? @relation(fields: [movil_cat_id], references: [mov_cat_id])
+  viajes                 Viaje[]
+
+  @@map("moviles")
+}
+
+model TipoDocumento {
+  tip_doc_id           String    @id @db.Char(3)
+  tip_doc_dsc          String    @db.VarChar(30)
+  tip_doc_usuario_alta String    @db.VarChar(50)
+  tip_doc_fecha_alta   DateTime  @default(now()) @db.Timestamptz
+  tip_doc_usuario_mod  String?   @db.VarChar(50)
+  tip_doc_fecha_mod    DateTime? @db.Timestamptz
+  clientes             Cliente[]
+
+  @@map("tipo_documentos")
+}
+
+model Zona {
+  zon_id           Int                      @id
+  zon_nombre       String                   @db.VarChar(100)
+  zon_poligono     Unsupported("geometry(MultiPolygon, 4326)")?
+  zon_color        String                   @default("#3498db") @db.VarChar(7)
+  zon_usuario_alta String                   @db.VarChar(50)
+  zon_fecha_alta   DateTime                 @default(now()) @db.Timestamptz
+  zon_usuario_mod  String?                  @db.VarChar(50)
+  zon_fecha_mod    DateTime?                @db.Timestamptz
+  direcciones      ClienteDireccion[]
+  viajes_zonas     ViajeZona[]
+
+  @@map("zonas")
+}
+
+model ClienteDireccion {
+  dir_id               String    @id @default(uuid()) @db.Uuid
+  cli_id               String    @db.Uuid
+  dir_telefono         String?   @db.VarChar(50)
+  dir_email            String?   @db.VarChar(100)
+  dir_bar_cod          Int
+  zon_id               Int?
+  dir_calle_principal  String    @db.Text
+  dir_nro_casa         String?   @db.VarChar(20)
+  dir_referencia       String?   @db.Text
+  dir_geolocalizacion  Unsupported("geometry(Point, 4326)")?
+  dir_foto_url         String?   @db.Text
+  dir_foto_descripcion String?   @db.VarChar(200)
+
+  cliente              Cliente   @relation(fields: [cli_id], references: [cli_id], onDelete: Cascade)
+  zona                 Zona?     @relation(fields: [zon_id], references: [zon_id])
+
+  @@map("clientes_direcciones")
+}
+
+model Cliente {
+  cli_id               String    @id @default(uuid()) @db.Uuid
+  cli_razon_social     String    @db.VarChar(200)
+  cli_tip_doc_id       String    @db.Char(3)
+  cli_nro_doc          String    @unique @db.VarChar(20)
+  cli_es_contribuyente Boolean?  @default(false)
+  cli_telefono         String?   @db.VarChar(50)
+  cli_email            String?   @db.VarChar(100)
+  cli_estado           String    @default("A") @db.VarChar(1)
+
+  tipoDocumento        TipoDocumento @relation(fields: [cli_tip_doc_id], references: [tip_doc_id])
+  direcciones          ClienteDireccion[]
+  viajes_clientes      ViajeCliente[]
+
+  @@map("clientes")
+}
+
+model TipoPuntoCobro {
+  tip_pun_cob_id        Int      @id @db.SmallInt
+  tip_pun_cob_nombre    String   @db.VarChar(100)
+  
+  // Auditoría
+  usuario_alta String    @map("tip_pun_pun_cob_usuario_alta") @db.VarChar(50)
+  fecha_alta   DateTime  @default(now()) @map("tip_pun_pun_cob_fecha_alta") @db.Timestamptz
+  usuario_mod  String?   @map("tip_pun_pun_cob_usuario_mod") @db.VarChar(50)
+  fecha_mod    DateTime? @map("tip_pun_pun_cob_fecha_mod") @db.Timestamptz
+
+  puntos       PuntoCobro[]
+
+  @@map("tipo_puntos_cobro")
+}
+
+model PuntoCobro {
+  pun_cob_id        Int      @id
+  pun_cob_nombre    String   @db.VarChar(100)
+  pun_cob_tipo      Int      @db.SmallInt
+  pun_cob_ubicacion Unsupported("geometry(Point, 4326)")?
+
+  // Auditoría
+  pun_cob_usuario_alta String   @db.VarChar(50)
+  pun_cob_fecha_alta   DateTime @default(now()) @db.Timestamptz(6)
+  pun_cob_usuario_mod  String?  @db.VarChar(50)
+  pun_cob_fecha_mod    DateTime? @db.Timestamptz(6)
+
+  // Relaciones
+  tarifas            PuntoCobroTarifa[]
+  formas_pago        PuntoCobroFormaPago[]
+
+  tipo         TipoPuntoCobro @relation(fields: [pun_cob_tipo], references: [tip_pun_cob_id])
+  viajes_puntos_cobro ViajePuntoCobro[]
+
+  @@map("puntos_cobro")
+}
+
+model PuntoCobroFormaPago {
+  pcf_pun_cob_id     Int
+  pcf_forma_pago_id  Int
+
+  punto_cobro        PuntoCobro @relation(fields: [pcf_pun_cob_id], references: [pun_cob_id], onDelete: Cascade)
+  forma_pago         FormaPago  @relation(fields: [pcf_forma_pago_id], references: [forma_pago_id])
+
+  @@id([pcf_pun_cob_id, pcf_forma_pago_id])
+  @@map("punto_cobro_formas_pago")
+}
+
+model MovilCategoria {
+  mov_cat_id   Int      @id @db.SmallInt
+  mov_cat_dsc  String   @db.VarChar(50)
+  
+  // Auditoría
+  usuario_alta String    @map("mov_cat_usuario_alta") @db.VarChar(50)
+  fecha_alta   DateTime  @default(now()) @map("mov_cat_fecha_alta") @db.Timestamptz
+  usuario_mod  String?   @map("mov_cat_usuario_mod") @db.VarChar(50)
+  fecha_mod    DateTime? @map("mov_cat_fecha_mod") @db.Timestamptz
+
+  moviles      Movil[]
+  tarifas      PuntoCobroTarifa[]
+
+  @@map("movil_categorias")
+}
+model FormaPago {
+  forma_pago_id           Int       @id
+  forma_pago_dsc          String    @db.VarChar(100)
+  forma_pago_usuario_alta String    @db.VarChar(50)
+  forma_pago_fecha_alta   DateTime  @default(now()) @db.Timestamptz
+  forma_pago_usuario_mod  String?   @db.VarChar(50)
+  forma_pago_fecha_mod   DateTime? @db.Timestamptz
+  tarifas                 PuntoCobroTarifa[]
+  puntos_cobro            PuntoCobroFormaPago[]
+  viajes                  Viaje[]
+
+  @@map("forma_pago")
+}
+
+model PuntoCobroTarifa {
+  pun_tar_id           Int       @id
+  pun_tar_pun_cob_id   Int
+  pun_tar_mov_cat_id   Int       @db.SmallInt
+  pun_tar_forma_pago_id Int
+  pun_tar_monto        Decimal   @db.Decimal(12, 2)
+  
+  pun_tar_usuario_alta String    @db.VarChar(50)
+  pun_tar_fecha_alta   DateTime  @default(now()) @db.Timestamptz
+  pun_tar_usuario_mod  String?   @db.VarChar(50)
+  pun_tar_fecha_mod    DateTime? @db.Timestamptz
+
+  punto_cobro   PuntoCobro     @relation(fields: [pun_tar_pun_cob_id], references: [pun_cob_id], onDelete: Cascade)
+  categoria     MovilCategoria @relation(fields: [pun_tar_mov_cat_id], references: [mov_cat_id])
+  forma_pago    FormaPago      @relation(fields: [pun_tar_forma_pago_id], references: [forma_pago_id])
+
+  @@map("punto_cobro_tarifas")
+}
+
+model FlujoEstado {
+  flu_est_id           Int      @id
+  flu_est_nom          String   @db.VarChar(50)
+  flu_est_color_hex    String?  @db.VarChar(7)
+  flu_est_est          Boolean  @default(true)
+  
+  // Auditoría
+  flu_est_usuario_alta String   @db.VarChar(50)
+  flu_est_fecha_alta   DateTime @default(now()) @db.Timestamptz
+  flu_est_usuario_mod  String?  @db.VarChar(50)
+  flu_est_fecha_mod    DateTime? @db.Timestamptz
+
+  configs_actual       FlujoEstadoConfig[] @relation("EstadoActual")
+  configs_siguiente    FlujoEstadoConfig[] @relation("EstadoSiguiente")
+
+  @@map("flujo_estados")
+}
+
+model Objeto {
+  obj_id               Int      @id
+  obj_nom              String   @db.VarChar(50)
+  
+  // Auditoría
+  obj_usuario_alta     String   @db.VarChar(50)
+  obj_fecha_alta       DateTime @default(now()) @db.Timestamptz
+  obj_usuario_mod      String?  @db.VarChar(50)
+  obj_fecha_mod        DateTime? @db.Timestamptz
+
+  workflow             FlujoEstadoConfig[]
+
+  @@map("objetos")
+}
+
+model FlujoEstadoConfig {
+  flu_conf_id               Int      @id
+  flu_conf_obj_id           Int
+  flu_conf_perfil_cod       Int
+  flu_conf_id_estado_actual Int?
+  flu_conf_id_estado_siguiente Int
+  flu_conf_es_estado_inicial Boolean @default(false)
+  flu_conf_etiqueta_accion  String?  @db.VarChar(50)
+
+  // Auditoría
+  flu_conf_usuario_alta     String   @db.VarChar(50)
+  flu_conf_fecha_alta       DateTime @default(now()) @db.Timestamptz
+  flu_conf_usuario_mod      String?  @db.VarChar(50)
+  flu_conf_fecha_mod        DateTime? @db.Timestamptz
+
+  objeto         Objeto       @relation(fields: [flu_conf_obj_id], references: [obj_id], onDelete: Cascade)
+  perfil         Perfil       @relation(fields: [flu_conf_perfil_cod], references: [perfil_cod], onDelete: Cascade)
+  estado_actual  FlujoEstado? @relation("EstadoActual", fields: [flu_conf_id_estado_actual], references: [flu_est_id], onDelete: Cascade)
+  estado_sig     FlujoEstado  @relation("EstadoSiguiente", fields: [flu_conf_id_estado_siguiente], references: [flu_est_id], onDelete: Cascade)
+
+  @@map("flujo_estados_config")
+}
+
+model Viaje {
+  via_id                Int       @id
+  via_movil_id          Int
+  via_chofer_doc        String    @db.VarChar(20)
+  via_ayudante_doc      String?   @db.VarChar(20)
+  via_forma_pago_gastos_id Int
+  via_deposito_origen_id Int
+  via_tipo              String    @db.VarChar(10) // 'ZONA' o 'RUTA'
+  via_fecha_programada  DateTime  @db.Timestamptz
+  via_estado            String    @default("PROGRAMADO") @db.VarChar(20)
+
+  // Auditoría
+  via_usuario_alta      String    @db.VarChar(50)
+  via_fecha_alta        DateTime  @default(now()) @db.Timestamptz
+  via_usuario_mod       String?   @db.VarChar(50)
+  via_fecha_mod         DateTime? @db.Timestamptz
+
+  movil         Movil           @relation(fields: [via_movil_id], references: [movil_id])
+  chofer        PersonalEntrega @relation("Chofer", fields: [via_chofer_doc], references: [per_ent_documento])
+  ayudante      PersonalEntrega? @relation("Ayudante", fields: [via_ayudante_doc], references: [per_ent_documento])
+  forma_pago    FormaPago       @relation(fields: [via_forma_pago_gastos_id], references: [forma_pago_id])
+  deposito      Deposito        @relation(fields: [via_deposito_origen_id], references: [deposito_id])
+
+  zonas         ViajeZona[]
+  clientes      ViajeCliente[]
+  puntos_cobro  ViajePuntoCobro[]
+
+  @@map("viajes")
+}
+
+model FlujoTrazabilidad {
+  flu_tra_id           Int      @id
+  flu_tra_orig         String?  @db.VarChar(20)
+  flu_tra_ref_id       String   @db.VarChar(20)
+  flu_tra_estado_ant   String?  @db.VarChar(50)
+  flu_tra_estado_nue   String   @db.VarChar(50)
+  flu_tra_fecha        DateTime @default(now()) @db.Timestamptz
+  flu_tra_usuario      String   @db.VarChar(50)
+  flu_tra_geo          Unsupported("GEOMETRY(Point, 4326)")?
+
+  @@map("flujo_trazabilidad")
+}
+
+model ViajeZona {
+  vz_via_id Int
+  vz_zon_id Int
+
+  viaje     Viaje @relation(fields: [vz_via_id], references: [via_id], onDelete: Cascade)
+  zona      Zona  @relation(fields: [vz_zon_id], references: [zon_id])
+
+  @@id([vz_via_id, vz_zon_id])
+  @@map("viaje_zonas")
+}
+
+model ViajeCliente {
+  vc_via_id Int
+  vc_cli_id String @db.Uuid
+  vc_orden  Int
+
+  viaje     Viaje   @relation(fields: [vc_via_id], references: [via_id], onDelete: Cascade)
+  cliente   Cliente @relation(fields: [vc_cli_id], references: [cli_id])
+
+  @@id([vc_via_id, vc_cli_id])
+  @@map("viaje_clientes")
+}
+
+model ViajePuntoCobro {
+  vpc_via_id     Int
+  vpc_pun_cob_id Int
+  vpc_monto      Decimal @db.Decimal(12, 2)
+  vpc_estado     String  @default("PENDIENTE") @db.VarChar(20)
+
+  viaje       Viaje      @relation(fields: [vpc_via_id], references: [via_id], onDelete: Cascade)
+  punto_cobro PuntoCobro @relation(fields: [vpc_pun_cob_id], references: [pun_cob_id])
+
+  @@id([vpc_via_id, vpc_pun_cob_id])
+  @@map("viaje_puntos_cobro")
+}
