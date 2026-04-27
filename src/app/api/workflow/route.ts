@@ -8,7 +8,7 @@ export async function GET(request: Request) {
 
     const where = objId ? { flu_conf_obj_id: parseInt(objId) } : {};
 
-    const data = await (prisma as any).flujoEstadoConfig.findMany({
+    const data = await prisma.flujoEstadoConfig.findMany({
       where,
       include: {
         objeto: true,
@@ -51,12 +51,12 @@ export async function POST(request: Request) {
     const { objId, perfilCod, estActId, estSigId, esInicial, etiqueta, usuario } = body;
 
     // Calcular el siguiente ID (+1 del máximo actual)
-    const maxItem = await (prisma as any).flujoEstadoConfig.aggregate({
+    const maxItem = await prisma.flujoEstadoConfig.aggregate({
       _max: { flu_conf_id: true }
     });
     const nextId = (maxItem._max.flu_conf_id || 0) + 1;
 
-    const created = await (prisma as any).flujoEstadoConfig.create({
+    const created = await prisma.flujoEstadoConfig.create({
       data: {
         flu_conf_id: nextId,
         flu_conf_obj_id: parseInt(objId),

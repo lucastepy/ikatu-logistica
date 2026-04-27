@@ -47,32 +47,28 @@ export async function DELETE(
     const { id } = await params;
     const menuId = parseInt(id);
 
-    // Eliminación en cascada manual dentro de una transacción
+    // No permitir borrar el menú 1 (es el menú por defecto de rescate)
+    if (menuId === 1) {
+      return NextResponse.json({ error: "No se puede eliminar el menú principal del sistema." }, { status: 400 });
+    }
+
+    // Usamos una transacción para asegurar integridad
     await prisma.$transaction([
-      // 1. Borrar detalles del menú
-      prisma.menuDet.deleteMany({
-        where: { menu_cod: menuId }
+      // 1. Reasignar perfiles al menú ID 1 (Rescate)
+      prisma.perfil.updateMany({
+        where: { menu_cod: menuId },
+        data: { menu_cod: 1 }
       }),
-      // 2. IMPORTANTE: Los perfiles tienen menu_cod NOT NULL. 
-      // Si borramos el menú, los perfiles asociados quedarían inválidos.
-      // Opción A: Borrar perfiles (esto borraría usuarios si no tienen cascada, cuidado)
-      // Opción B: Forzar el borrado del menú y dejar que la DB falle si hay perfiles (más seguro)
-      // En este caso, el usuario intentaba poner 0. Si no hay un menú '0', falla.
-      // Borraremos el menú directamente, pero antes limpiamos los detalles.
+      // 2. Borrar el menú. 
+      // (menu_det se borrará solo por el CASCADE que configuraste en la DB)
       prisma.menu.delete({
         where: { menu_cod: menuId }
       })
     ]);
 
-    return NextResponse.json({ message: "Menú eliminado con éxito" });
+    return NextResponse.json({ message: "Menú eliminado y perfiles reasignados al menú principal." });
   } catch (error: any) {
     console.error("Delete Menu Error:", error);
-    // Si el error es P2003 es por los Perfiles vinculados
-    if (error.code === 'P2003') {
-      return NextResponse.json({ 
-        error: "No se puede eliminar el menú porque tiene perfiles asociados. Reasigne los perfiles a otro menú primero." 
-      }, { status: 400 });
-    }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: "Error al eliminar menú: " + error.message }, { status: 500 });
   }
 }

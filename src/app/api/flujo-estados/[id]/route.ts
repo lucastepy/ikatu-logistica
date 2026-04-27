@@ -7,25 +7,24 @@ export async function PUT(
 ) {
   try {
     const { id: idParam } = await params;
+    const estadoId = parseInt(idParam);
     const body = await request.json();
-    const { nom, color, est, usuario } = body;
-    const id = parseInt(idParam);
+    const { nombre, color, estado, usuario } = body;
 
-    const updated = await (prisma as any).flujoEstado.update({
-      where: { flu_est_id: id },
+    const updated = await prisma.flujoEstado.update({
+      where: { flu_est_id: estadoId },
       data: {
-        flu_est_nom: nom,
+        flu_est_nom: nombre,
         flu_est_color_hex: color,
-        flu_est_est: est !== undefined ? est : true,
-        flu_est_usuario_mod: usuario || "SISTEMA",
+        flu_est_est: estado,
+        flu_est_usuario_mod: usuario,
         flu_est_fecha_mod: new Date()
       }
     });
 
     return NextResponse.json(updated);
   } catch (error: any) {
-    console.error("Error updating flujo estado:", error);
-    return NextResponse.json({ error: "Error al actualizar registro: " + error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
@@ -35,13 +34,12 @@ export async function DELETE(
 ) {
   try {
     const { id: idParam } = await params;
-    const id = parseInt(idParam);
-    await (prisma as any).flujoEstado.delete({
-      where: { flu_est_id: id }
+    const estadoId = parseInt(idParam);
+    await prisma.flujoEstado.delete({
+      where: { flu_est_id: estadoId }
     });
-    return NextResponse.json({ message: "Registro eliminado" });
+    return NextResponse.json({ message: "Estado eliminado" });
   } catch (error: any) {
-    console.error("Error deleting flujo estado:", error);
-    return NextResponse.json({ error: "Error al eliminar registro: " + error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

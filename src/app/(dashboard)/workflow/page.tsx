@@ -29,6 +29,11 @@ export default function WorkflowPage() {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
   const [itemToDelete, setItemToDelete] = useState<any>(null);
+  const [selectedObjFilter, setSelectedObjFilter] = useState<string>("all");
+
+  // Paginación
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const [estadoForm, setEstadoForm] = useState({ nombre: "", color: "#10b981", estado: true });
   const [objetoForm, setObjetoForm] = useState({ nombre: "" });
@@ -46,14 +51,16 @@ export default function WorkflowPage() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const fetchData = async () => {
+  const fetchData = async (objId?: string) => {
     setLoading(true);
     try {
+      const configUrl = objId && objId !== "all" ? `/api/workflow?objId=${objId}` : "/api/workflow";
+      
       const [resEst, resObj, resPerf, resConf] = await Promise.all([
         fetch("/api/flujo-estados"),
         fetch("/api/objetos"),
         fetch("/api/admin/perfiles"),
-        fetch("/api/workflow")
+        fetch(configUrl)
       ]);
       setEstados(await resEst.json());
       setObjetos(await resObj.json());
@@ -64,8 +71,8 @@ export default function WorkflowPage() {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    fetchData(selectedObjFilter);
+  }, [selectedObjFilter]);
 
   const openCreate = () => {
     setEditingItem(null);
@@ -148,6 +155,22 @@ export default function WorkflowPage() {
 
   const currentData = activeTab === "objetos" ? objetos : activeTab === "estados" ? estados : configs;
 
+  // Lógica de Paginación
+  const totalPages = Math.ceil(currentData.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedData = currentData.slice(startIndex, startIndex + itemsPerPage);
+
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
+
+  // Resetear página al cambiar tab o filtro
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, selectedObjFilter]);
+
   return (
     <div className="p-8 space-y-6 animate-in fade-in duration-500 bg-[#f8fafc] min-h-screen">
       <div className="flex justify-between items-start">
@@ -178,10 +201,29 @@ export default function WorkflowPage() {
       </div>
 
       <Card className="border-none shadow-sm rounded-xl overflow-hidden bg-white">
-        <div className="p-6 border-b border-slate-100">
+        <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
            <h3 className="text-lg font-bold text-slate-800">
              {activeTab === "objetos" ? "Objetos Registrados" : activeTab === "estados" ? "Estados de Flujo" : "Matriz de Transiciones"}
            </h3>
+
+           {activeTab === "config" && (
+             <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-xl border border-slate-100">
+               <div className="flex items-center gap-2 px-2 border-r border-slate-200">
+                 <Boxes className="h-4 w-4 text-[#00a3e0]" />
+                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Filtrar por Objeto</span>
+               </div>
+               <select 
+                value={selectedObjFilter}
+                onChange={(e) => setSelectedObjFilter(e.target.value)}
+                className="bg-transparent border-none text-sm font-bold text-slate-600 outline-none pr-8 cursor-pointer focus:ring-0"
+               >
+                 <option value="all">TODOS LOS OBJETOS</option>
+                 {objetos.map(o => (
+                   <option key={o.obj_id} value={o.obj_id}>{o.obj_nom.toUpperCase()}</option>
+                 ))}
+               </select>
+             </div>
+           )}
         </div>
         
         <CardContent className="p-0">
@@ -217,9 +259,9 @@ export default function WorkflowPage() {
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
                    <tr><td colSpan={10} className="px-6 py-12 text-center text-slate-400 italic">Cargando datos...</td></tr>
-                ) : currentData.length === 0 ? (
+                ) : paginatedData.length === 0 ? (
                    <tr><td colSpan={10} className="px-6 py-12 text-center text-slate-400 italic">No hay registros disponibles.</td></tr>
-                ) : currentData.map((item) => (
+                ) : paginatedData.map((item) => (
                   <tr key={activeTab === "objetos" ? item.obj_id : activeTab === "estados" ? item.flu_est_id : item.flu_conf_id} className="hover:bg-slate-50/50 transition-colors">
                     {activeTab === "objetos" ? (
                       <>
@@ -297,6 +339,30 @@ export default function WorkflowPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Paginación */}
+          {!loading && currentData.length > 0 && (
+            <div className="flex items-center justify-between px-6 py-4 bg-slate-50/50 border-t border-slate-100">
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-tighter">
+                Mostrando <span className="text-slate-600 font-black">{startIndex + 1}</span> a <span className="text-slate-600 font-black">{Math.min(startIndex + itemsPerPage, currentData.length)}</span> de <span className="text-slate-600 font-black">{currentData.length}</span> registros
+              </p>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-slate-200" onClick={() => goToPage(1)} disabled={currentPage === 1} title="Primero"><ChevronsLeft className="h-4 w-4" /></Button>
+                <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-slate-200" onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1} title="Anterior"><ChevronLeft className="h-4 w-4" /></Button>
+                
+                <div className="flex items-center gap-1 mx-2">
+                  <Badge variant="secondary" className="h-8 w-8 flex items-center justify-center p-0 rounded-lg bg-[#00a3e0]/10 text-[#00a3e0] font-bold border-[#00a3e0]/20">
+                    {currentPage}
+                  </Badge>
+                  <span className="text-[10px] text-slate-400 font-black uppercase px-1">de</span>
+                  <span className="text-[10px] text-slate-400 font-black uppercase px-1">{totalPages || 1}</span>
+                </div>
+
+                <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-slate-200" onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages} title="Siguiente"><ChevronRight className="h-4 w-4" /></Button>
+                <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-slate-200" onClick={() => goToPage(totalPages)} disabled={currentPage === totalPages} title="Último"><ChevronsRight className="h-4 w-4" /></Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

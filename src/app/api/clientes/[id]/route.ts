@@ -10,7 +10,7 @@ export async function PUT(
     const body = await request.json();
     const { razonSocial, tipDocId, nroDoc, esContribuyente, telefono, email, estado } = body;
 
-    const updated = await (prisma as any).cliente.update({
+    const updated = await prisma.cliente.update({
       where: { cli_id: id },
       data: {
         cli_razon_social: razonSocial,
@@ -19,7 +19,9 @@ export async function PUT(
         cli_es_contribuyente: esContribuyente,
         cli_telefono: telefono,
         cli_email: email,
-        cli_estado: estado
+        cli_estado: estado,
+        cli_usuario_mod: body.usuario || "SISTEMA",
+        cli_fecha_mod: new Date()
       }
     });
 

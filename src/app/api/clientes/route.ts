@@ -6,7 +6,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const estado = searchParams.get("estado") || "A";
     
-    const clientes = await (prisma as any).cliente.findMany({
+    const clientes = await prisma.cliente.findMany({
       where: {
         cli_estado: estado
       },
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { razonSocial, tipDocId, nroDoc, esContribuyente, telefono, email } = body;
 
-    const nuevoCliente = await (prisma as any).cliente.create({
+    const nuevoCliente = await prisma.cliente.create({
       data: {
         cli_razon_social: razonSocial,
         cli_tip_doc_id: tipDocId,

@@ -15,8 +15,13 @@ import {
   CheckCircle2, 
   Save, 
   FileText,
-  Hash
+  Hash,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 export default function TipoDocumentosPage() {
   const [data, setData] = useState<any[]>([]);
@@ -203,15 +208,29 @@ export default function TipoDocumentosPage() {
               </tbody>
             </table>
           </div>
-          {/* Pagination Footer */}
-          <div className="p-6 border-t border-slate-100 flex items-center justify-between bg-slate-50/20">
-             <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Total: {filteredData.length} registros</span>
-             <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="h-9 px-4 rounded-xl font-bold" onClick={() => setCurrentPage(Math.max(1, currentPage-1))} disabled={currentPage===1}>Anterior</Button>
-                <div className="flex items-center px-6 bg-white border border-slate-200 rounded-xl text-xs font-black text-accent shadow-inner">{currentPage} / {totalPages || 1}</div>
-                <Button variant="outline" size="sm" className="h-9 px-4 rounded-xl font-bold" onClick={() => setCurrentPage(Math.min(totalPages, currentPage+1))} disabled={currentPage===totalPages || totalPages === 0}>Siguiente</Button>
-             </div>
-          </div>
+          {/* Paginación Estandarizada */}
+          {!loading && filteredData.length > 0 && (
+            <div className="p-6 border-t border-slate-100 flex items-center justify-between bg-slate-50/20">
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-tighter">
+                Mostrando <span className="text-slate-600 font-black">{(currentPage - 1) * itemsPerPage + 1}</span> a <span className="text-slate-600 font-black">{Math.min(currentPage * itemsPerPage, filteredData.length)}</span> de <span className="text-slate-600 font-black">{filteredData.length}</span> registros
+              </p>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-slate-200" onClick={() => setCurrentPage(1)} disabled={currentPage === 1} title="Primero"><ChevronsLeft className="h-4 w-4" /></Button>
+                <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-slate-200" onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1} title="Anterior"><ChevronLeft className="h-4 w-4" /></Button>
+                
+                <div className="flex items-center gap-1 mx-2">
+                  <Badge variant="secondary" className="h-8 w-8 flex items-center justify-center p-0 rounded-lg bg-accent/10 text-accent font-bold border-accent/20">
+                    {currentPage}
+                  </Badge>
+                  <span className="text-[10px] text-slate-400 font-black uppercase px-1">de</span>
+                  <span className="text-[10px] text-slate-400 font-black uppercase px-1">{totalPages || 1}</span>
+                </div>
+
+                <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-slate-200" onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages} title="Siguiente"><ChevronRight className="h-4 w-4" /></Button>
+                <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-slate-200" onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} title="Último"><ChevronsRight className="h-4 w-4" /></Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

@@ -11,7 +11,7 @@ export async function PUT(
     const { objId, perfilCod, estActId, estSigId, esInicial, etiqueta, usuario } = body;
     const id = parseInt(idParam);
 
-    const updated = await (prisma as any).flujoEstadoConfig.update({
+    const updated = await prisma.flujoEstadoConfig.update({
       where: { flu_conf_id: id },
       data: {
         flu_conf_obj_id: parseInt(objId),
@@ -39,7 +39,7 @@ export async function DELETE(
   try {
     const { id: idParam } = await params;
     const id = parseInt(idParam);
-    await (prisma as any).flujoEstadoConfig.delete({
+    await prisma.flujoEstadoConfig.delete({
       where: { flu_conf_id: id }
     });
     return NextResponse.json({ message: "Registro eliminado" });

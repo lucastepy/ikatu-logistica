@@ -3,7 +3,7 @@ import prisma from "@/lib/prisma";
 
 export async function GET() {
   try {
-    const data = await (prisma as any).flujoEstado.findMany({
+    const data = await prisma.flujoEstado.findMany({
       orderBy: { flu_est_id: "asc" }
     });
 
@@ -39,12 +39,12 @@ export async function POST(request: Request) {
     const { nom, color, est, usuario } = body;
 
     // Calcular el siguiente ID (+1 del máximo actual)
-    const maxItem = await (prisma as any).flujoEstado.aggregate({
+    const maxItem = await prisma.flujoEstado.aggregate({
       _max: { flu_est_id: true }
     });
     const nextId = (maxItem._max.flu_est_id || 0) + 1;
 
-    const created = await (prisma as any).flujoEstado.create({
+    const created = await prisma.flujoEstado.create({
       data: {
         flu_est_id: nextId,
         flu_est_nom: nom,

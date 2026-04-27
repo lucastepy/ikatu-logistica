@@ -73,19 +73,36 @@ export default function ConfigLocationsPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
+      // Cargamos el catálogo actual (el que se muestra en la grilla)
       const res = await fetch(`/api/admin/config-locations?type=${activeTab}`);
+      if (!res.ok) throw new Error(`Error en catálogo: ${res.status}`);
       const json = await res.json();
       setData(Array.isArray(json) ? json : []);
       setCurrentPage(1);
 
-      const rDep = await fetch("/api/admin/config-locations?type=dep");
-      setDeps(await rDep.json());
-      const rDis = await fetch("/api/admin/config-locations?type=dis");
-      setDistritos(await rDis.json());
-      const rCiu = await fetch("/api/admin/config-locations?type=ciu");
-      setCiudades(await rCiu.json());
+      // Cargamos las dependencias (listas desplegables) en paralelo y de forma resiliente
+      const endpoints = [
+        { key: "dep", url: "/api/admin/config-locations?type=dep" },
+        { key: "dis", url: "/api/admin/config-locations?type=dis" },
+        { key: "ciu", url: "/api/admin/config-locations?type=ciu" }
+      ];
+
+      const results = await Promise.allSettled(
+        endpoints.map(e => fetch(e.url).then(r => r.ok ? r.json() : []))
+      );
+
+      results.forEach((result, index) => {
+        const key = endpoints[index].key;
+        if (result.status === "fulfilled") {
+          if (key === "dep") setDeps(result.value);
+          if (key === "dis") setDistritos(result.value);
+          if (key === "ciu") setCiudades(result.value);
+        }
+      });
+
     } catch (e) {
-      console.error(e);
+      console.error("FetchData Error:", e);
+      showToast("Error de conexión con el servidor");
     } finally {
       setLoading(false);
     }
@@ -423,14 +440,29 @@ export default function ConfigLocationsPage() {
               </tbody>
             </table>
           </div>
-          <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
-             <span className="text-[11px] font-bold text-slate-400 uppercase">Total: {filteredData.length}</span>
-             <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="h-8 px-3" onClick={() => setCurrentPage(Math.max(1, currentPage-1))} disabled={currentPage===1}>Anterior</Button>
-                <div className="flex items-center px-4 bg-white border border-slate-200 rounded-lg text-xs font-bold text-accent">{currentPage} / {totalPages || 1}</div>
-                <Button variant="outline" size="sm" className="h-8 px-3" onClick={() => setCurrentPage(Math.min(totalPages, currentPage+1))} disabled={currentPage===totalPages || totalPages === 0}>Siguiente</Button>
-             </div>
-          </div>
+          {/* Paginación Estandarizada */}
+          {!loading && filteredData.length > 0 && (
+            <div className="flex items-center justify-between px-8 py-4 bg-slate-50/50 border-t border-slate-100">
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-tighter">
+                Mostrando <span className="text-slate-600 font-black">{(currentPage - 1) * itemsPerPage + 1}</span> a <span className="text-slate-600 font-black">{Math.min(currentPage * itemsPerPage, filteredData.length)}</span> de <span className="text-slate-600 font-black">{filteredData.length}</span> registros
+              </p>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-slate-200" onClick={() => setCurrentPage(1)} disabled={currentPage === 1} title="Primero"><ChevronsLeft className="h-4 w-4" /></Button>
+                <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-slate-200" onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1} title="Anterior"><ChevronLeft className="h-4 w-4" /></Button>
+                
+                <div className="flex items-center gap-1 mx-2">
+                  <Badge variant="secondary" className="h-8 w-8 flex items-center justify-center p-0 rounded-lg bg-accent/10 text-accent font-bold border-accent/20">
+                    {currentPage}
+                  </Badge>
+                  <span className="text-[10px] text-slate-400 font-black uppercase px-1">de</span>
+                  <span className="text-[10px] text-slate-400 font-black uppercase px-1">{totalPages || 1}</span>
+                </div>
+
+                <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-slate-200" onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages} title="Siguiente"><ChevronRight className="h-4 w-4" /></Button>
+                <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-slate-200" onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} title="Último"><ChevronsRight className="h-4 w-4" /></Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
