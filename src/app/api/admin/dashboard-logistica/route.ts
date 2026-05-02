@@ -3,34 +3,32 @@ import { prisma } from "@/lib/db";
 
 export async function GET() {
   try {
-    const [depositos, tiposDep, personalEntrega, unidades] = await Promise.all([
-      prisma.deposito.count(),
-      prisma.tipoDeposito.count(),
-      prisma.tipoPersonalEntrega.count(),
-      prisma.unidadMedida.count(),
+    // Usamos métodos nativos de Prisma que ya manejan el esquema correctamente
+    const [depositosCount, tiposDepCount, personalCount, unidadesCount, capacidadSum] = await Promise.all([
+      (prisma as any).deposito.count(),
+      (prisma as any).tipoDeposito.count(),
+      (prisma as any).tipoPersonalEntrega.count(),
+      (prisma as any).unidadMedida.count(),
+      (prisma as any).deposito.aggregate({
+        _sum: { deposito_cap_vol_m3: true }
+      })
     ]);
-
-    // Calcular capacidad total instalada de depósitos
-    const depositosData = await prisma.deposito.findMany({
-      select: { deposito_cap_vol_m3: true }
-    });
-    
-    const capacidadTotal = depositosData.reduce((acc, curr) => {
-      return acc + Number(curr.deposito_cap_vol_m3 || 0);
-    }, 0);
 
     return NextResponse.json({
       metrics: {
-        depositos,
-        tiposDep,
-        personalEntrega,
-        unidades,
-        capacidadTotal,
+        depositos: depositosCount || 0,
+        tiposDep: tiposDepCount || 0,
+        personalEntrega: personalCount || 0,
+        unidades: unidadesCount || 0,
+        capacidadTotal: capacidadSum._sum?.deposito_cap_vol_m3 || 0,
         lastUpdate: new Date().toLocaleTimeString('es-PY', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
       }
     });
-  } catch (error) {
-    console.error("Error fetching logistics metrics:", error);
-    return NextResponse.json({ error: "Error al obtener métricas de logística" }, { status: 500 });
+  } catch (error: any) {
+    console.error("Logistics Dashboard SQL Error:", error);
+    return NextResponse.json({ 
+      error: "Error al obtener métricas de logística",
+      details: error.message 
+    }, { status: 500 });
   }
 }

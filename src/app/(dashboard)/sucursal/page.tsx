@@ -8,37 +8,29 @@ import { Label } from "@/components/ui/label";
 import { CustomModal } from "@/components/ui/dialog-custom";
 import { ConfirmModal } from "@/components/ui/modal-confirm";
 import { 
-  Plus, 
-  MapPin, 
-  Phone, 
-  Edit3, 
-  Trash2, 
-  CheckCircle2, 
-  Save, 
-  Search,
-  ChevronLeft, 
-  ChevronRight, 
-  ChevronsLeft, 
-  ChevronsRight,
-  Store,
-  Users
+  Plus, Edit3, Trash2, CheckCircle2, Save, Search, 
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
+  Store, MapPin, Phone, Users, Loader2
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { useFieldSecurity } from "@/hooks/useFieldSecurity";
 
 interface Sucursal {
   suc_id: number;
   suc_nombre: string;
-  suc_direccion: string | null;
-  suc_telefono: string | null;
-  suc_estado: string | null;
-  _count: {
+  suc_direccion?: string;
+  suc_telefono?: string;
+  suc_estado: string;
+  _count?: {
     usuarios: number;
   };
 }
 
 export default function SucursalPage() {
+  const { isHidden, isReadOnly, loadingRestrictions } = useFieldSecurity("Sucursal");
   const [sucursales, setSucursales] = useState<Sucursal[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   
@@ -66,7 +58,17 @@ export default function SucursalPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/sucursales");
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+
+      const res = await fetch("/api/admin/sucursales", {
+        headers: {
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        }
+      });
       const data = await res.json();
       setSucursales(Array.isArray(data) ? data : []);
       setCurrentPage(1);
@@ -90,7 +92,7 @@ export default function SucursalPage() {
   const openEdit = (item: Sucursal) => {
     setEditingItem(item);
     setFormData({ 
-      nombre: item.suc_nombre, 
+      nombre: item.suc_nombre || "", 
       direccion: item.suc_direccion || "", 
       telefono: item.suc_telefono || "", 
       estado: item.suc_estado || "A" 
@@ -100,22 +102,39 @@ export default function SucursalPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const method = editingItem ? "PUT" : "POST";
-    const url = editingItem ? `/api/admin/sucursales/${editingItem.suc_id}` : "/api/admin/sucursales";
+    setIsSubmitting(true);
+    try {
+      const method = editingItem ? "PUT" : "POST";
+      const url = editingItem ? `/api/admin/sucursales/${editingItem.suc_id}` : "/api/admin/sucursales";
 
-    const res = await fetch(url, {
-      method,
-      body: JSON.stringify(formData),
-      headers: { "Content-Type": "application/json" }
-    });
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
 
-    if (res.ok) {
-      setIsModalOpen(false);
-      showToast(editingItem ? "Sucursal actualizada" : "Sucursal creada");
-      fetchData();
-    } else {
-      const err = await res.json();
-      showToast(err.error || "Error al procesar");
+      const res = await fetch(url, {
+        method,
+        body: JSON.stringify(formData),
+        headers: { 
+          "Content-Type": "application/json",
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        }
+      });
+
+      if (res.ok) {
+        setIsModalOpen(false);
+        showToast(editingItem ? "Sucursal actualizada" : "Sucursal creada");
+        fetchData();
+      } else {
+        const err = await res.json();
+        showToast(err.error || "Error al procesar");
+      }
+    } catch (e) {
+      console.error(e);
+      showToast("Error de conexión");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -126,7 +145,18 @@ export default function SucursalPage() {
 
   const onConfirmDelete = async () => {
     if (!itemToDelete) return;
-    const res = await fetch(`/api/admin/sucursales/${itemToDelete}`, { method: "DELETE" });
+    const userJson = localStorage.getItem("user");
+    const user = userJson ? JSON.parse(userJson) : null;
+    const tenantId = user?.tenantId || "public";
+
+    const res = await fetch(`/api/admin/sucursales/${itemToDelete}`, { 
+      method: "DELETE",
+      headers: {
+        "x-tenant-id": tenantId,
+        "x-user-email": user?.email || "",
+        "x-user-profile": user?.perfil_cod?.toString() || ""
+      }
+    });
     if (res.ok) {
       setIsConfirmOpen(false);
       showToast("Sucursal eliminada");
@@ -139,7 +169,7 @@ export default function SucursalPage() {
 
   // Filtrado
   const filteredSucursales = sucursales.filter(s => 
-    s.suc_nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (s.suc_nombre || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
     (s.suc_direccion || "").toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -153,6 +183,10 @@ export default function SucursalPage() {
       setCurrentPage(page);
     }
   };
+
+  if (loadingRestrictions && loading) {
+    return <div className="h-screen flex items-center justify-center text-slate-400 font-bold uppercase tracking-widest animate-pulse">Sincronizando Seguridad...</div>;
+  }
 
   return (
     <div className="p-8 space-y-8 animate-in fade-in duration-500 relative">
@@ -201,10 +235,10 @@ export default function SucursalPage() {
             <table className="w-full text-left">
               <thead>
                 <tr className="border-b border-border bg-background/30 text-xs uppercase tracking-widest text-muted font-bold">
-                  <th className="px-6 py-4 w-20">ID</th>
+                  {!isHidden("suc_id") && <th className="px-6 py-4 w-20">ID</th>}
                   <th className="px-6 py-4">Sucursal / Dirección</th>
                   <th className="px-6 py-4 text-center">Usuarios</th>
-                  <th className="px-6 py-4 text-center">Estado</th>
+                  {!isHidden("suc_estado") && <th className="px-6 py-4 text-center">Estado</th>}
                   <th className="px-6 py-4 text-right">Acciones</th>
                 </tr>
               </thead>
@@ -215,17 +249,19 @@ export default function SucursalPage() {
                   <tr><td colSpan={5} className="px-6 py-8 text-center text-muted italic">No se encontraron sucursales.</td></tr>
                 ) : currentSucursales.map((item) => (
                   <tr key={item.suc_id} className="hover:bg-background/40 transition-colors group">
-                    <td className="px-6 py-4 font-mono text-xs text-muted">#{item.suc_id.toString().padStart(3, '0')}</td>
+                    {!isHidden("suc_id") && <td className="px-6 py-4 font-mono text-xs text-muted">#{item.suc_id.toString().padStart(3, '0')}</td>}
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="p-2 rounded-lg bg-accent/5 text-accent border border-accent/10">
                           <Store className="h-4 w-4" />
                         </div>
                         <div>
-                          <p className="font-bold text-foreground leading-none mb-1">{item.suc_nombre}</p>
-                          <div className="flex items-center gap-1 text-[11px] text-muted font-medium italic">
-                            <MapPin className="h-3 w-3" /> {item.suc_direccion || "Sin dirección"}
-                          </div>
+                          {!isHidden("suc_nombre") && <p className="font-bold text-foreground leading-none mb-1">{item.suc_nombre}</p>}
+                          {!isHidden("suc_direccion") && (
+                            <div className="flex items-center gap-1 text-[11px] text-muted font-medium italic">
+                              <MapPin className="h-3 w-3" /> {item.suc_direccion || "Sin dirección"}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -234,11 +270,13 @@ export default function SucursalPage() {
                          <Users className="h-3 w-3" /> {item._count?.usuarios || 0}
                        </Badge>
                     </td>
-                    <td className="px-6 py-4 text-center">
-                      <Badge variant="outline" className={`font-black uppercase text-[9px] tracking-tight ${item.suc_estado === 'A' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-red-500/10 text-red-600 border-red-500/20'}`}>
-                        {item.suc_estado === 'A' ? 'ACTIVO' : 'INACTIVO'}
-                      </Badge>
-                    </td>
+                    {!isHidden("suc_estado") && (
+                      <td className="px-6 py-4 text-center">
+                        <Badge variant="outline" className={`font-black uppercase text-[9px] tracking-tight ${item.suc_estado === 'A' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-red-500/10 text-red-600 border-red-500/20'}`}>
+                          {item.suc_estado === 'A' ? 'ACTIVO' : 'INACTIVO'}
+                        </Badge>
+                      </td>
+                    )}
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end gap-2">
                         <Button onClick={() => openEdit(item)} variant="outline" size="sm" className="h-8 gap-2 border-slate-200 hover:bg-slate-50 transition-all px-3 font-bold text-xs shadow-sm text-slate-600">
@@ -281,65 +319,85 @@ export default function SucursalPage() {
         </CardContent>
       </Card>
 
-      <CustomModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingItem ? "Editar Sucursal" : "Nueva Sucursal"}>
+      <CustomModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        title={editingItem ? "Editar Sucursal" : "Nueva Sucursal"}
+        className="max-w-xl shadow-[0_50px_100px_-20px_rgba(0,0,0,0.3)] border-white/50 backdrop-blur-xl"
+      >
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-          <div className="space-y-2">
-            <Label>Nombre de la Sucursal</Label>
-            <div className="relative">
-              <Input 
-                value={formData.nombre} 
-                onChange={(e) => setFormData({...formData, nombre: e.target.value})} 
-                placeholder="Ej: Sucursal Central Asunción"
-                className="pl-9"
-                required 
-                autoFocus
-              />
-              <Store className="absolute left-3 top-2.5 h-4 w-4 text-muted opacity-40" />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
+          {!isHidden("suc_nombre") && (
             <div className="space-y-2">
-              <Label>Teléfono</Label>
+              <Label>Nombre de la Sucursal</Label>
               <div className="relative">
                 <Input 
-                  value={formData.telefono} 
-                  onChange={(e) => setFormData({...formData, telefono: e.target.value})} 
-                  placeholder="+595 ..."
-                  className="pl-9"
+                  value={formData.nombre} 
+                  onChange={(e) => setFormData({...formData, nombre: e.target.value})} 
+                  placeholder="Ej: Sucursal Central Asunción"
+                  className="h-12 pl-10 border-slate-200 text-slate-950 font-medium bg-white shadow-sm"
+                  required 
+                  autoFocus
+                  disabled={isReadOnly("suc_nombre")}
                 />
-                <Phone className="absolute left-3 top-2.5 h-4 w-4 text-muted opacity-40" />
+                <Store className="absolute left-3 top-2.5 h-4 w-4 text-muted opacity-40" />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label>Estado</Label>
-              <select 
-                className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                value={formData.estado}
-                onChange={e => setFormData({...formData, estado: e.target.value})}
-              >
-                <option value="A">Activo</option>
-                <option value="I">Inactivo</option>
-              </select>
-            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            {!isHidden("suc_telefono") && (
+              <div className="space-y-2">
+                <Label>Teléfono</Label>
+                <div className="relative">
+                  <Input 
+                    value={formData.telefono} 
+                    onChange={(e) => setFormData({...formData, telefono: e.target.value})} 
+                    placeholder="+595 ..."
+                    className="h-12 pl-10 border-slate-200 text-slate-950 font-medium bg-white shadow-sm"
+                    disabled={isReadOnly("suc_telefono")}
+                  />
+                  <Phone className="absolute left-3 top-2.5 h-4 w-4 text-muted opacity-40" />
+                </div>
+              </div>
+            )}
+            {!isHidden("suc_estado") && (
+              <div className="space-y-2">
+                <Label>Estado</Label>
+                <select 
+                  className="flex h-12 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-950 font-medium focus:ring-2 focus:ring-accent outline-none shadow-sm"
+                  value={formData.estado}
+                  onChange={e => setFormData({...formData, estado: e.target.value})}
+                  disabled={isReadOnly("suc_estado")}
+                >
+                  <option value="A">Activo</option>
+                  <option value="I">Inactivo</option>
+                </select>
+              </div>
+            )}
           </div>
 
-          <div className="space-y-2">
-            <Label>Dirección Física</Label>
-            <div className="relative">
-              <Input 
-                value={formData.direccion} 
-                onChange={(e) => setFormData({...formData, direccion: e.target.value})} 
-                placeholder="Calle, Nro, Referencia..."
-                className="pl-9"
-              />
-              <MapPin className="absolute left-3 top-2.5 h-4 w-4 text-muted opacity-40" />
+          {!isHidden("suc_direccion") && (
+            <div className="space-y-2">
+              <Label>Dirección Física</Label>
+              <div className="relative">
+                <Input 
+                  value={formData.direccion} 
+                  onChange={(e) => setFormData({...formData, direccion: e.target.value})} 
+                  placeholder="Calle, Nro, Referencia..."
+                  className="h-12 pl-10 border-slate-200 text-slate-950 font-medium bg-white shadow-sm"
+                  disabled={isReadOnly("suc_direccion")}
+                />
+                <MapPin className="absolute left-3 top-2.5 h-4 w-4 text-muted opacity-40" />
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="flex gap-3 pt-4">
-            <Button type="submit" className="flex-1 bg-accent text-white font-bold gap-2 shadow-lg"><Save className="h-4 w-4" /> {editingItem ? "Actualizar" : "Guardar Sucursal"}</Button>
-            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1">Cancelar</Button>
+            <Button type="submit" disabled={isSubmitting} className="flex-1 bg-accent text-white font-bold gap-2 shadow-lg h-12 rounded-xl transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-70 disabled:scale-100">
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {isSubmitting ? "Guardando..." : (editingItem ? "Actualizar" : "Guardar Sucursal")}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1 h-12 rounded-xl">Cancelar</Button>
           </div>
         </form>
       </CustomModal>

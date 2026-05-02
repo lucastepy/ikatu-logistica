@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { CustomModal } from "@/components/ui/dialog-custom";
 import { ConfirmModal } from "@/components/ui/modal-confirm";
-import { Plus, Truck, Edit3, Trash2, CheckCircle2, Save, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { Plus, Truck, Edit3, Trash2, CheckCircle2, Save, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Loader2 } from "lucide-react";
 
 interface TipoPersonalEntrega {
   tip_per_ent_id: number;
@@ -20,8 +20,10 @@ interface TipoPersonalEntrega {
 }
 
 export default function TipoPersonalEntregaPage() {
+  const { isHidden, isReadOnly, loadingRestrictions } = useFieldSecurity("TipoPersonalEntrega");
   const [data, setData] = useState<TipoPersonalEntrega[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -46,7 +48,17 @@ export default function TipoPersonalEntregaPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/tipo-personal-entrega");
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+
+      const res = await fetch("/api/admin/tipo-personal-entrega", {
+        headers: {
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        }
+      });
       const result = await res.json();
       setData(Array.isArray(result) ? result : []);
       setCurrentPage(1);
@@ -80,23 +92,44 @@ export default function TipoPersonalEntregaPage() {
     e.preventDefault();
     if (!formData.dsc.trim()) return;
 
-    const method = editingItem ? "PUT" : "POST";
-    const url = editingItem ? `/api/admin/tipo-personal-entrega/${editingItem.tip_per_ent_id}` : "/api/admin/tipo-personal-entrega";
+    setIsSubmitting(true);
+    try {
+      const method = editingItem ? "PUT" : "POST";
+      const url = editingItem ? `/api/admin/tipo-personal-entrega/${editingItem.tip_per_ent_id}` : "/api/admin/tipo-personal-entrega";
 
-    const res = await fetch(url, {
-      method,
-      body: JSON.stringify({
-        ...formData,
-        tenantId: 1, // Default o desde sesión en el futuro
-        usuario: "SISTEMA" // Default o desde sesión en el futuro
-      }),
-      headers: { "Content-Type": "application/json" }
-    });
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+      const usuarioPk = user?.email || "SISTEMA";
 
-    if (res.ok) {
-      setIsModalOpen(false);
-      showToast(editingItem ? "Registro actualizado" : "Registro creado");
-      fetchData();
+      const res = await fetch(url, {
+        method,
+        body: JSON.stringify({
+          ...formData,
+          tenantId, 
+          usuario: usuarioPk 
+        }),
+        headers: { 
+          "Content-Type": "application/json",
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        }
+      });
+
+      if (res.ok) {
+        setIsModalOpen(false);
+        showToast(editingItem ? "Registro actualizado" : "Registro creado");
+        fetchData();
+      } else {
+        const err = await res.json();
+        showToast(err.error || "Error al guardar registro");
+      }
+    } catch (e) {
+      console.error(e);
+      showToast("Error de conexión");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -107,11 +140,25 @@ export default function TipoPersonalEntregaPage() {
 
   const onConfirmDelete = async () => {
     if (!itemToDelete) return;
-    const res = await fetch(`/api/admin/tipo-personal-entrega/${itemToDelete}`, { method: "DELETE" });
+    const userJson = localStorage.getItem("user");
+    const user = userJson ? JSON.parse(userJson) : null;
+    const tenantId = user?.tenantId || "public";
+
+    const res = await fetch(`/api/admin/tipo-personal-entrega/${itemToDelete}`, { 
+      method: "DELETE",
+      headers: {
+        "x-tenant-id": tenantId,
+        "x-user-email": user?.email || "",
+        "x-user-profile": user?.perfil_cod?.toString() || ""
+      }
+    });
     if (res.ok) {
       setIsConfirmOpen(false);
       showToast("Registro eliminado");
       fetchData();
+    } else {
+       const err = await res.json();
+       showToast(err.error || "No se pudo eliminar");
     }
   };
 
@@ -125,6 +172,10 @@ export default function TipoPersonalEntregaPage() {
       setCurrentPage(page);
     }
   };
+
+  if (loadingRestrictions && loading) {
+    return <div className="h-screen flex items-center justify-center text-slate-400 font-bold uppercase tracking-widest animate-pulse">Sincronizando Seguridad...</div>;
+  }
 
   return (
     <div className="p-8 space-y-8 animate-in fade-in duration-500 relative">
@@ -157,9 +208,9 @@ export default function TipoPersonalEntregaPage() {
             <table className="w-full text-left">
               <thead>
                 <tr className="border-b border-border bg-background/30 text-xs uppercase tracking-widest text-muted font-bold">
-                  <th className="px-6 py-4 w-24">ID</th>
-                  <th className="px-6 py-4">Descripción</th>
-                  <th className="px-6 py-4 text-center">Estado</th>
+                  {!isHidden("tip_per_ent_id") && <th className="px-6 py-4 w-24">ID</th>}
+                  {!isHidden("tip_per_ent_dsc") && <th className="px-6 py-4">Descripción</th>}
+                  {!isHidden("tip_per_ent_est") && <th className="px-6 py-4 text-center">Estado</th>}
                   <th className="px-6 py-4 text-right">Acciones</th>
                 </tr>
               </thead>
@@ -170,20 +221,24 @@ export default function TipoPersonalEntregaPage() {
                   <tr><td colSpan={4} className="px-6 py-8 text-center text-muted italic">No hay registros configurados.</td></tr>
                 ) : currentItems.map((item) => (
                   <tr key={item.tip_per_ent_id} className="hover:bg-background/40 transition-colors group">
-                    <td className="px-6 py-4 font-mono text-xs text-muted">#{item.tip_per_ent_id}</td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-lg bg-accent/5 text-accent">
-                          <Truck className="h-4 w-4" />
+                    {!isHidden("tip_per_ent_id") && <td className="px-6 py-4 font-mono text-xs text-muted">#{item.tip_per_ent_id}</td>}
+                    {!isHidden("tip_per_ent_dsc") && (
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-lg bg-accent/5 text-accent">
+                            <Truck className="h-4 w-4" />
+                          </div>
+                          <span className="font-bold text-foreground">{item.tip_per_ent_dsc}</span>
                         </div>
-                        <span className="font-bold text-foreground">{item.tip_per_ent_dsc}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <Badge variant={item.tip_per_ent_est ? "outline" : "secondary"} className={item.tip_per_ent_est ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-600 font-bold" : "font-bold"}>
-                        {item.tip_per_ent_est ? "ACTIVO" : "INACTIVO"}
-                      </Badge>
-                    </td>
+                      </td>
+                    )}
+                    {!isHidden("tip_per_ent_est") && (
+                      <td className="px-6 py-4 text-center">
+                        <Badge variant={item.tip_per_ent_est ? "outline" : "secondary"} className={item.tip_per_ent_est ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-600 font-bold" : "font-bold"}>
+                          {item.tip_per_ent_est ? "ACTIVO" : "INACTIVO"}
+                        </Badge>
+                      </td>
+                    )}
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end gap-2">
                         <Button onClick={() => openEdit(item)} variant="outline" size="sm" className="h-8 gap-2 border-border hover:bg-background group-hover:border-accent group-hover:text-accent transition-all px-3">
@@ -224,41 +279,55 @@ export default function TipoPersonalEntregaPage() {
         </CardContent>
       </Card>
 
-      <CustomModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingItem ? "Editar Tipo" : "Crear Tipo"}>
+      <CustomModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        title={editingItem ? "Editar Tipo" : "Crear Tipo"}
+        className="max-w-2xl shadow-[0_50px_100px_-20px_rgba(0,0,0,0.3)] border-white/50 backdrop-blur-xl"
+      >
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-          <div className="space-y-2">
-            <Label>Descripción</Label>
-            <Input 
-              value={formData.dsc} 
-              onChange={(e) => setFormData({...formData, dsc: e.target.value})} 
-              placeholder="Ej: Chofer, Ayudante, Courier..."
-              required 
-              autoFocus
-            />
-          </div>
-          <div className="flex items-center gap-3 p-4 rounded-xl bg-background border border-border mt-2">
-            <input 
-              type="checkbox" 
-              id="est" 
-              checked={formData.est} 
-              disabled={!editingItem}
-              onChange={(e) => setFormData({...formData, est: e.target.checked})}
-              className={`h-5 w-5 rounded border-gray-300 text-accent focus:ring-accent accent-accent ${!editingItem ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-            />
-            <div className="grid gap-1.5 leading-none">
-              <Label htmlFor="est" className={`text-sm font-bold leading-none ${!editingItem ? "cursor-not-allowed text-muted" : "cursor-pointer"}`}>
-                Estado Activo
-              </Label>
-              <p className="text-xs text-muted font-medium">
-                {editingItem 
-                  ? "Indica si este tipo de personal está habilitado para ser asignado." 
-                  : "Los nuevos registros se crean activos por defecto."}
-              </p>
+          {!isHidden("tip_per_ent_dsc") && (
+            <div className="space-y-2">
+              <Label>Descripción</Label>
+              <Input 
+                value={formData.dsc} 
+                onChange={(e) => setFormData({...formData, dsc: e.target.value})} 
+                placeholder="Ej: Chofer, Ayudante, Courier..."
+                className="h-12 border-slate-200 focus-visible:ring-accent font-medium rounded-xl text-slate-950 bg-white shadow-sm"
+                required 
+                autoFocus
+                disabled={isReadOnly("tip_per_ent_dsc")}
+              />
             </div>
-          </div>
+          )}
+          {!isHidden("tip_per_ent_est") && (
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-background border border-border mt-2">
+              <input 
+                type="checkbox" 
+                id="est" 
+                checked={formData.est} 
+                disabled={!editingItem || isReadOnly("tip_per_ent_est")}
+                onChange={(e) => setFormData({...formData, est: e.target.checked})}
+                className={`h-5 w-5 rounded border-gray-300 text-accent focus:ring-accent accent-accent ${(!editingItem || isReadOnly("tip_per_ent_est")) ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+              />
+              <div className="grid gap-1.5 leading-none">
+                <Label htmlFor="est" className={`text-sm font-bold leading-none ${(!editingItem || isReadOnly("tip_per_ent_est")) ? "cursor-not-allowed text-muted" : "cursor-pointer"}`}>
+                  Estado Activo
+                </Label>
+                <p className="text-xs text-muted font-medium">
+                  {editingItem 
+                    ? "Indica si este tipo de personal está habilitado para ser asignado." 
+                    : "Los nuevos registros se crean activos por defecto."}
+                </p>
+              </div>
+            </div>
+          )}
           <div className="flex gap-3 pt-4">
-            <Button type="submit" className="flex-1 bg-accent text-white font-bold gap-2"><Save className="h-4 w-4" /> {editingItem ? "Actualizar Registro" : "Guardar Registro"}</Button>
-            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1">Cancelar</Button>
+            <Button type="submit" disabled={isSubmitting} className="flex-1 bg-accent text-white font-bold gap-2 h-12 rounded-xl transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-70 disabled:scale-100 shadow-lg shadow-accent/20">
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {isSubmitting ? "Guardando..." : (editingItem ? "Actualizar Registro" : "Guardar Registro")}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1 h-12 rounded-xl">Cancelar</Button>
           </div>
         </form>
       </CustomModal>

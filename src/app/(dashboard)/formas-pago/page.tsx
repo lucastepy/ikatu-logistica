@@ -1,5 +1,7 @@
 "use client";
 
+import { useFieldSecurity } from "@/hooks/useFieldSecurity";
+
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,14 +12,16 @@ import { ConfirmModal } from "@/components/ui/modal-confirm";
 import { 
   Plus, Edit3, Trash2, CheckCircle2, Save, Search, 
   CreditCard, Wallet, Type, LayoutGrid,
-  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Loader2
 } from "lucide-react";
 import { getLoggedUserEmail } from "@/lib/auth-utils";
 import { Badge } from "@/components/ui/badge";
 
 export default function FormasPagoPage() {
+  const { isHidden, isReadOnly, loadingRestrictions } = useFieldSecurity("FormaPago");
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   
@@ -41,7 +45,17 @@ export default function FormasPagoPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/formas-pago");
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+
+      const res = await fetch("/api/formas-pago", {
+        headers: {
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        }
+      });
       const json = await res.json();
       setData(Array.isArray(json) ? json : []);
     } catch (e) { console.error(e); }
@@ -68,22 +82,36 @@ export default function FormasPagoPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    const usuarioEmail = getLoggedUserEmail();
+    setIsSubmitting(true);
+    try {
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+      const usuarioPk = user?.id?.toString() || "SISTEMA";
 
-    const method = editingItem ? "PUT" : "POST";
-    const url = editingItem ? `/api/formas-pago/${editingItem.forma_pago_id}` : "/api/formas-pago";
-    
-    const res = await fetch(url, { 
-      method, 
-      body: JSON.stringify({ ...formData, usuario: usuarioEmail }), 
-      headers: { "Content-Type": "application/json" } 
-    });
+      const res = await fetch(url, { 
+        method, 
+        body: JSON.stringify({ ...formData, usuario: usuarioPk }), 
+        headers: { 
+          "Content-Type": "application/json",
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        } 
+      });
 
-    if (res.ok) { 
-      setIsModalOpen(false); 
-      showToast(editingItem ? "Forma de pago actualizada" : "Forma de pago creada"); 
-      fetchData(); 
+      if (res.ok) { 
+        setIsModalOpen(false); 
+        showToast(editingItem ? "Forma de pago actualizada" : "Forma de pago creada"); 
+        fetchData(); 
+      } else {
+        const err = await res.json();
+        showToast(err.error || "Error al guardar");
+      }
+    } catch (error) {
+      showToast("Error de conexión");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -93,6 +121,10 @@ export default function FormasPagoPage() {
 
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
   const currentItems = filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  if (loadingRestrictions && loading) {
+    return <div className="h-screen flex items-center justify-center text-slate-400 font-bold uppercase tracking-widest animate-pulse">Sincronizando Seguridad...</div>;
+  }
 
   return (
     <div className="p-8 space-y-6 animate-in fade-in duration-500">
@@ -138,8 +170,8 @@ export default function FormasPagoPage() {
             <table className="w-full text-left">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-[11px] tracking-tight text-slate-400 font-bold uppercase">
-                  <th className="px-8 py-4 w-24 text-center">ID</th>
-                  <th className="px-8 py-4">Descripción</th>
+                  {!isHidden("forma_pago_id") && <th className="px-8 py-4 w-24 text-center">ID</th>}
+                  {!isHidden("forma_pago_dsc") && <th className="px-8 py-4">Descripción</th>}
                   <th className="px-8 py-4">Última Modificación</th>
                   <th className="px-8 py-4 text-right">Acciones</th>
                 </tr>
@@ -151,15 +183,17 @@ export default function FormasPagoPage() {
                   <tr><td colSpan={4} className="px-8 py-10 text-center text-slate-400 italic">No hay registros.</td></tr>
                 ) : currentItems.map((item) => (
                   <tr key={item.forma_pago_id} className="hover:bg-slate-50/30 transition-colors">
-                    <td className="px-8 py-4 font-mono text-[11px] text-accent font-black text-center">#{item.forma_pago_id}</td>
-                    <td className="px-8 py-4">
-                       <div className="flex items-center gap-3">
-                         <div className="p-2 rounded-lg bg-accent/10">
-                            <CreditCard className="h-4 w-4 text-accent" />
+                    {!isHidden("forma_pago_id") && <td className="px-8 py-4 font-mono text-[11px] text-accent font-black text-center">#{item.forma_pago_id}</td>}
+                    {!isHidden("forma_pago_dsc") && (
+                      <td className="px-8 py-4">
+                         <div className="flex items-center gap-3">
+                           <div className="p-2 rounded-lg bg-accent/10">
+                              <CreditCard className="h-4 w-4 text-accent" />
+                           </div>
+                           <span className="font-bold text-slate-700">{item.forma_pago_dsc}</span>
                          </div>
-                         <span className="font-bold text-slate-700">{item.forma_pago_dsc}</span>
-                       </div>
-                    </td>
+                      </td>
+                    )}
                     <td className="px-8 py-4">
                        <div className="flex flex-col text-[10px]">
                          <span className="text-slate-500 font-bold uppercase">{item.usuario_mod_nombre || item.usuario_alta_nombre}</span>
@@ -204,7 +238,12 @@ export default function FormasPagoPage() {
         </CardContent>
       </Card>
 
-      <CustomModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={`${editingItem ? 'Editar' : 'Nueva'} Forma de Pago`}>
+      <CustomModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        title={`${editingItem ? 'Editar' : 'Nueva'} Forma de Pago`}
+        className="max-w-md shadow-[0_50px_100px_-20px_rgba(0,0,0,0.3)] border-white/50 backdrop-blur-xl"
+      >
         <form onSubmit={handleSubmit} className="space-y-6 pt-2">
            <div className="bg-accent/5 p-4 rounded-2xl border border-accent/10 flex items-center gap-4 mb-2">
               <div className="h-10 w-10 rounded-full bg-accent text-white flex items-center justify-center">
@@ -217,23 +256,29 @@ export default function FormasPagoPage() {
            </div>
 
            <div className="space-y-4">
-              <div className="space-y-2">
-                 <Label className="flex items-center gap-2"><Type className="h-3 w-3 text-accent" /> Descripción</Label>
-                 <Input 
-                   value={formData.dsc} 
-                   onChange={e => setFormData({...formData, dsc: e.target.value})} 
-                   placeholder="Ej: EFECTIVO, TARJETA, TRANSFERENCIA..." 
-                   required 
-                   autoFocus
-                   className="h-11 rounded-xl"
-                 />
-              </div>
+              {!isHidden("forma_pago_dsc") && (
+                 <div className="space-y-2">
+                    <Label className="flex items-center gap-2 text-slate-700 font-bold"><Type className="h-3 w-3 text-accent" /> Descripción</Label>
+                    <Input 
+                      value={formData.dsc} 
+                      onChange={e => setFormData({...formData, dsc: e.target.value})} 
+                      placeholder="Ej: EFECTIVO, TARJETA, TRANSFERENCIA..." 
+                      required 
+                      autoFocus
+                      className="h-12 rounded-xl text-slate-950 font-medium bg-white border-slate-200 shadow-sm"
+                      disabled={isReadOnly("forma_pago_dsc")}
+                    />
+                 </div>
+              )}
            </div>
 
-           <div className="flex gap-3 pt-6">
-              <Button type="submit" className="flex-1 bg-accent text-white font-bold h-12 rounded-2xl shadow-lg flex gap-2 uppercase tracking-tighter"><Save className="h-4 w-4" /> Guardar Forma de Pago</Button>
-              <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1 h-12 rounded-2xl font-bold uppercase tracking-tighter text-slate-500">Cancelar</Button>
-           </div>
+            <div className="flex gap-3 pt-6">
+               <Button type="submit" disabled={isSubmitting} className="flex-1 bg-accent text-white font-bold h-12 rounded-2xl shadow-lg flex gap-2 uppercase tracking-tighter transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-70 disabled:scale-100">
+                 {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                 {isSubmitting ? "Guardando..." : "Guardar Forma de Pago"}
+               </Button>
+               <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1 h-12 rounded-2xl font-bold uppercase tracking-tighter text-slate-500 border-slate-200">Cancelar</Button>
+            </div>
         </form>
       </CustomModal>
 
@@ -242,7 +287,18 @@ export default function FormasPagoPage() {
         onClose={() => setIsConfirmOpen(false)} 
         onConfirm={async () => {
           if (!itemToDelete) return;
-          const res = await fetch(`/api/formas-pago/${itemToDelete.forma_pago_id}`, { method: "DELETE" });
+          const userJson = localStorage.getItem("user");
+          const user = userJson ? JSON.parse(userJson) : null;
+          const tenantId = user?.tenantId || "public";
+
+          const res = await fetch(`/api/formas-pago/${itemToDelete.forma_pago_id}`, { 
+            method: "DELETE",
+            headers: {
+              "x-tenant-id": tenantId,
+              "x-user-email": user?.email || "",
+              "x-user-profile": user?.perfil_cod?.toString() || ""
+            }
+          });
           if (res.ok) { setIsConfirmOpen(false); showToast("Forma de pago eliminada"); fetchData(); }
         }} 
         title="¿Eliminar Forma de Pago?" 

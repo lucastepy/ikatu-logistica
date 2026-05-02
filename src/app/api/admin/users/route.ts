@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prismaPublic as prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth";
 
-// GET: Listar todos los usuarios
-export async function GET() {
+// GET: Listar usuarios (opcionalmente filtrados por tenant)
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const tenantId = searchParams.get("tenantId");
+
     const users = await prisma.usuario.findMany({
+      where: tenantId ? { usuario_tenantid: tenantId } : {},
       include: {
-        empresa: { select: { empresa_nom: true } },
-        sucursal: { select: { suc_nombre: true } },
         perfil: { select: { perfil_nombre: true } }
       },
       orderBy: { usuario_fecha_creacion: 'desc' }
@@ -42,11 +44,10 @@ export async function POST(request: Request) {
         usuario_nombre: nombre,
         usuario_password: hashedPassword,
         perfil_cod: parseInt(perfil_cod),
-        usuario_empresa: parseInt(empresa_cod),
-        usuario_sucursal: sucursal_id ? parseInt(sucursal_id) : null,
-        usuario_tenantid: parseInt(tenantId || "1"),
+        usuario_tenantid: tenantId || "tenant_default",
         usuario_estado: "A",
-        usuario_primer_ingreso: true
+        usuario_primer_ingreso: true,
+        usuario_usuario_creacion: "SISTEMA"
       }
     });
 

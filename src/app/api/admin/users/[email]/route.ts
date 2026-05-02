@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prismaPublic as prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth";
 
 export async function PUT(
@@ -15,10 +15,10 @@ export async function PUT(
     const updateData: any = {
       usuario_nombre: nombre,
       perfil_cod: parseInt(perfil_cod),
-      usuario_empresa: parseInt(empresa_cod),
-      usuario_sucursal: sucursal_id ? parseInt(sucursal_id) : null,
       usuario_estado: estado,
-      usuario_tenantid: parseInt(tenantId || "1")
+      usuario_tenantid: tenantId || "tenant_default",
+      usuario_fecha_modificacion: new Date(),
+      usuario_usuario_modificacion: "SISTEMA"
     };
 
     // Solo actualizar password si se proporciona

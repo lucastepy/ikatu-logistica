@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { CustomModal } from "@/components/ui/dialog-custom";
 import { ConfirmModal } from "@/components/ui/modal-confirm";
-import { Plus, Shield, Users, Edit3, Trash2, CheckCircle2, Save, Layout, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { Plus, Shield, Users, Edit3, Trash2, CheckCircle2, Save, Layout, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Loader2 } from "lucide-react";
 
 interface Menu {
   menu_cod: number;
@@ -31,6 +31,7 @@ export default function ProfilesPage() {
   const [perfiles, setPerfiles] = useState<Perfil[]>([]);
   const [menus, setMenus] = useState<Menu[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -93,19 +94,29 @@ export default function ProfilesPage() {
     e.preventDefault();
     if (!formData.nombre.trim() || !formData.menu_cod) return;
 
-    const method = editingPerfil ? "PUT" : "POST";
-    const url = editingPerfil ? `/api/admin/profiles/${editingPerfil.perfil_cod}` : "/api/admin/profiles";
+    setIsSubmitting(true);
+    try {
+      const method = editingPerfil ? "PUT" : "POST";
+      const url = editingPerfil ? `/api/admin/profiles/${editingPerfil.perfil_cod}` : "/api/admin/profiles";
 
-    const res = await fetch(url, {
-      method,
-      body: JSON.stringify(formData),
-      headers: { "Content-Type": "application/json" }
-    });
+      const res = await fetch(url, {
+        method,
+        body: JSON.stringify(formData),
+        headers: { "Content-Type": "application/json" }
+      });
 
-    if (res.ok) {
-      setIsModalOpen(false);
-      showToast(editingPerfil ? "Perfil actualizado" : "Perfil creado");
-      fetchData();
+      if (res.ok) {
+        setIsModalOpen(false);
+        showToast(editingPerfil ? "Perfil actualizado" : "Perfil creado");
+        fetchData();
+      } else {
+        showToast("Error al procesar solicitud");
+      }
+    } catch (e) {
+      console.error(e);
+      showToast("Error de conexión");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -240,7 +251,12 @@ export default function ProfilesPage() {
         </CardContent>
       </Card>
 
-      <CustomModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingPerfil ? "Editar Perfil" : "Crear Perfil"}>
+      <CustomModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        title={editingPerfil ? "Editar Perfil" : "Crear Perfil"}
+        className="max-w-xl shadow-[0_50px_100px_-20px_rgba(0,0,0,0.3)] border-white/50 backdrop-blur-xl"
+      >
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
           <div className="space-y-2">
             <Label>Nombre del Perfil</Label>
@@ -248,6 +264,7 @@ export default function ProfilesPage() {
               value={formData.nombre} 
               onChange={(e) => setFormData({...formData, nombre: e.target.value})} 
               placeholder="Ej: Administrador, Vendedor..."
+              className="h-12 border-slate-200 text-slate-950 font-medium bg-white shadow-sm"
               required 
               autoFocus
             />
@@ -255,7 +272,7 @@ export default function ProfilesPage() {
           <div className="space-y-2">
             <Label>Menú Asignado</Label>
             <select 
-              className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-12 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-950 font-medium focus:ring-2 focus:ring-accent outline-none shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
               value={formData.menu_cod}
               onChange={e => setFormData({...formData, menu_cod: e.target.value})}
               required
@@ -270,8 +287,11 @@ export default function ProfilesPage() {
             <p className="text-[10px] text-muted font-medium italic mt-1">Este menú definirá la navegación para los usuarios con este rol.</p>
           </div>
           <div className="flex gap-3 pt-4">
-            <Button type="submit" className="flex-1 bg-accent text-white font-bold gap-2"><Save className="h-4 w-4" /> {editingPerfil ? "Actualizar" : "Guardar Perfil"}</Button>
-            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1">Cancelar</Button>
+            <Button type="submit" disabled={isSubmitting} className="flex-1 bg-accent text-white font-bold gap-2 h-12 rounded-xl transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-70 disabled:scale-100 shadow-lg shadow-accent/20">
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {isSubmitting ? "Guardando..." : (editingPerfil ? "Actualizar" : "Guardar Perfil")}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1 h-12 rounded-xl">Cancelar</Button>
           </div>
         </form>
       </CustomModal>

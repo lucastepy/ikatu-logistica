@@ -39,27 +39,27 @@ export default function DashboardAdmin() {
   const stats = [
     { 
       label: "Menús Totales", 
-      value: data?.metrics.menus || 0, 
+      value: data?.metrics?.menus || 0, 
       icon: LayoutDashboard, 
       color: "text-blue-500", 
       bg: "bg-blue-500/10",
-      link: "/menus" 
+      link: "/admin/menus" 
     },
     { 
       label: "Ítems Navegación", 
-      value: data?.metrics.items || 0, 
+      value: data?.metrics?.items || 0, 
       icon: ListTree, 
       color: "text-accent", 
       bg: "bg-accent/10",
-      link: "/menus"
+      link: "/admin/menus"
     },
     { 
       label: "Perfiles Activos", 
-      value: data?.metrics.profiles || 0, 
+      value: data?.metrics?.profiles || 0, 
       icon: Users, 
       color: "text-purple-500", 
       bg: "bg-purple-500/10",
-      link: "/perfiles"
+      link: "/admin/perfiles"
     },
   ];
 
@@ -122,14 +122,14 @@ export default function DashboardAdmin() {
           </CardHeader>
           <CardContent className="p-8">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Link href="/menus" className="p-5 rounded-2xl border border-border bg-background/30 hover:bg-accent/5 hover:border-accent/30 transition-all group flex items-center justify-between">
+              <Link href="/admin/menus" className="p-5 rounded-2xl border border-border bg-background/30 hover:bg-accent/5 hover:border-accent/30 transition-all group flex items-center justify-between">
                 <div>
                   <h4 className="font-bold text-foreground">Gestionar Estructuras</h4>
                   <p className="text-xs text-muted">Añadir o editar menús y opciones.</p>
                 </div>
                 <ChevronRight className="h-5 w-5 text-muted group-hover:text-accent translate-x-0 group-hover:translate-x-1 transition-all" />
               </Link>
-              <Link href="/perfiles" className="p-5 rounded-2xl border border-border bg-background/30 hover:bg-purple-500/5 hover:border-purple-500/30 transition-all group flex items-center justify-between">
+              <Link href="/admin/perfiles" className="p-5 rounded-2xl border border-border bg-background/30 hover:bg-purple-500/5 hover:border-purple-500/30 transition-all group flex items-center justify-between">
                 <div>
                   <h4 className="font-bold text-foreground">Seguridad y Roles</h4>
                   <p className="text-xs text-muted">Configurar permisos por perfiles.</p>
@@ -153,7 +153,7 @@ export default function DashboardAdmin() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-muted">Último Refresco</span>
-                <span className="text-xs font-mono font-bold text-foreground">{loading ? "Calculando..." : data?.metrics.lastSync}</span>
+                <span className="text-xs font-mono font-bold text-foreground">{loading ? "Calculando..." : (data?.metrics?.lastSync || "---")}</span>
               </div>
               <div className="pt-6 border-t border-border">
                 <p className="text-[10px] text-muted leading-relaxed italic">

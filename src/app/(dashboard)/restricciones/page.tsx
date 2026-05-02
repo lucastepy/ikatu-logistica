@@ -23,23 +23,28 @@ import {
   ShieldCheck,
   ChevronLeft,
   ChevronRight,
+  ChevronRight,
   ChevronsLeft,
-  ChevronsRight
+  ChevronsRight,
+  Loader2
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface Restriccion {
-  id: number;
-  tabla: string;
-  columna: string;
-  oculto: boolean | null;
-  editable: boolean | null;
-  creado_en: string | null;
+  res_cam_id: number;
+  res_cam_tabla: string;
+  res_cam_columna: string;
+  res_cam_oculto: boolean | null;
+  res_cam_editable: boolean | null;
+  res_cam_fecha_alta: string | null;
+  perfiles?: { perfil: { perfil_cod: number; perfil_nombre: string } }[];
+  usuarios?: { usuario: { usuario_email: string; usuario_nombre: string } }[];
 }
 
 export default function RestriccionesPage() {
   const [restricciones, setRestricciones] = useState<Restriccion[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -53,13 +58,17 @@ export default function RestriccionesPage() {
   
   const [tables, setTables] = useState<string[]>([]);
   const [columns, setColumns] = useState<string[]>([]);
+  const [allPerfiles, setAllPerfiles] = useState<any[]>([]);
+  const [allUsers, setAllUsers] = useState<any[]>([]);
   const [loadingSchema, setLoadingSchema] = useState(false);
   
   const [formData, setFormData] = useState({
     tabla: "",
     columna: "",
     oculto: false,
-    editable: true
+    editable: true,
+    perfiles: [] as number[],
+    usuarios: [] as string[]
   });
 
   const showToast = (msg: string) => {
@@ -81,8 +90,24 @@ export default function RestriccionesPage() {
     }
   };
 
+  const fetchAuxData = async () => {
+    try {
+      const [pRes, uRes] = await Promise.all([
+        fetch("/api/admin/perfiles"),
+        fetch("/api/admin/users")
+      ]);
+      const pData = await pRes.json();
+      const uData = await uRes.json();
+      setAllPerfiles(Array.isArray(pData) ? pData : []);
+      setAllUsers(Array.isArray(uData) ? uData : []);
+    } catch (e) {
+      console.error("Error fetching aux data:", e);
+    }
+  };
+
   useEffect(() => {
     fetchData();
+    fetchAuxData();
   }, []);
 
   const fetchSchemaTables = async () => {
@@ -122,7 +147,14 @@ export default function RestriccionesPage() {
 
   const openCreate = () => {
     setEditingItem(null);
-    setFormData({ tabla: "", columna: "", oculto: false, editable: true });
+    setFormData({ 
+      tabla: "", 
+      columna: "", 
+      oculto: false, 
+      editable: true,
+      perfiles: [],
+      usuarios: []
+    });
     fetchSchemaTables();
     setIsModalOpen(true);
   };
@@ -130,10 +162,12 @@ export default function RestriccionesPage() {
   const openEdit = (item: Restriccion) => {
     setEditingItem(item);
     setFormData({ 
-      tabla: item.tabla, 
-      columna: item.columna, 
-      oculto: !!item.oculto, 
-      editable: !!item.editable 
+      tabla: item.res_cam_tabla, 
+      columna: item.res_cam_columna, 
+      oculto: !!item.res_cam_oculto, 
+      editable: !!item.res_cam_editable,
+      perfiles: item.perfiles?.map(p => p.perfil.perfil_cod) || [],
+      usuarios: item.usuarios?.map(u => u.usuario.usuario_email) || []
     });
     fetchSchemaTables();
     setIsModalOpen(true);
@@ -141,19 +175,29 @@ export default function RestriccionesPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const method = editingItem ? "PUT" : "POST";
-    const url = editingItem ? `/api/admin/restricciones/${editingItem.id}` : "/api/admin/restricciones";
+    setIsSubmitting(true);
+    try {
+      const method = editingItem ? "PUT" : "POST";
+      const url = editingItem ? `/api/admin/restricciones/${editingItem.res_cam_id}` : "/api/admin/restricciones";
 
-    const res = await fetch(url, {
-      method,
-      body: JSON.stringify(formData),
-      headers: { "Content-Type": "application/json" }
-    });
+      const res = await fetch(url, {
+        method,
+        body: JSON.stringify(formData),
+        headers: { "Content-Type": "application/json" }
+      });
 
-    if (res.ok) {
-      setIsModalOpen(false);
-      showToast(editingItem ? "Restricción actualizada" : "Restricción creada");
-      fetchData();
+      if (res.ok) {
+        setIsModalOpen(false);
+        showToast(editingItem ? "Restricción actualizada" : "Restricción creada");
+        fetchData();
+      } else {
+        showToast("Error al guardar restricción");
+      }
+    } catch (e) {
+      console.error(e);
+      showToast("Error de conexión");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -170,6 +214,14 @@ export default function RestriccionesPage() {
       showToast("Restricción eliminada");
       fetchData();
     }
+  };
+
+  const toggleSelection = (type: 'perfiles' | 'usuarios', val: any) => {
+    const current = [...formData[type]] as any[];
+    const idx = current.indexOf(val);
+    if (idx > -1) current.splice(idx, 1);
+    else current.push(val);
+    setFormData({...formData, [type]: current});
   };
 
   // Lógica de Paginación
@@ -196,66 +248,89 @@ export default function RestriccionesPage() {
 
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-accent">Restricciones de Campos</h1>
-          <p className="text-muted mt-1">Controla la visibilidad y edición de columnas por tabla.</p>
+          <h1 className="text-3xl font-bold tracking-tight text-[#00658d]">Gobernanza de Campos</h1>
+          <p className="text-muted mt-1">Define visibilidad y permisos a nivel de tabla, perfil y usuario.</p>
         </div>
-        <Button onClick={openCreate} className="bg-accent text-white font-bold shadow-lg flex gap-2">
-          <Plus className="h-4 w-4" /> Nueva Restricción
+        <Button onClick={openCreate} className="bg-[#00aeef] hover:bg-[#00658d] text-white font-bold shadow-lg flex gap-2 rounded-xl h-11 px-6 transition-all">
+          <Plus className="h-4 w-4" /> Nueva Regla
         </Button>
       </div>
 
-      <Card className="bg-card border-border shadow-xl overflow-hidden">
-        <CardHeader className="border-b bg-background/50">
-          <CardTitle className="text-lg">Reglas de Gobernanza</CardTitle>
-          <CardDescription>Define qué campos están ocultos o bloqueados en la interfaz.</CardDescription>
+      <Card className="bg-white border-slate-200/60 shadow-xl overflow-hidden rounded-2xl">
+        <CardHeader className="border-b bg-slate-50/50 p-6">
+          <div className="flex items-center gap-3 text-[#00658d]">
+            <ShieldCheck className="h-5 w-5" />
+            <CardTitle className="text-lg font-bold">Matriz de Restricciones</CardTitle>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full text-left">
+            <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-border bg-background/30 text-xs uppercase tracking-widest text-muted font-bold">
-                  <th className="px-6 py-4">Tabla</th>
-                  <th className="px-6 py-4">Columna / Campo</th>
-                  <th className="px-6 py-4 text-center">Visibilidad</th>
-                  <th className="px-6 py-4 text-center">Edición</th>
-                  <th className="px-6 py-4 text-right">Acciones</th>
+                <tr className="border-b border-slate-100 bg-slate-50/30 text-[11px] uppercase tracking-widest text-slate-400 font-black">
+                  <th className="px-8 py-5">Tabla / Origen</th>
+                  <th className="px-8 py-5">Columna</th>
+                  <th className="px-8 py-5">Alcance (Perfiles/Usuarios)</th>
+                  <th className="px-8 py-5 text-center">Estado</th>
+                  <th className="px-8 py-5 text-right">Acciones</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody className="divide-y divide-slate-50">
                 {loading ? (
-                  <tr><td colSpan={5} className="px-6 py-8 text-center text-muted italic">Cargando reglas...</td></tr>
+                  <tr><td colSpan={5} className="px-8 py-12 text-center text-slate-400 italic font-medium"><Loader2 className="h-6 w-6 animate-spin mx-auto mb-2 opacity-20" /> Cargando matriz de seguridad...</td></tr>
                 ) : currentRestricciones.length === 0 ? (
-                  <tr><td colSpan={5} className="px-6 py-8 text-center text-muted italic">No hay restricciones configuradas.</td></tr>
+                  <tr><td colSpan={5} className="px-8 py-12 text-center text-slate-400 italic font-medium">No se han definido reglas de gobernanza.</td></tr>
                 ) : currentRestricciones.map((item) => (
-                  <tr key={item.id} className="hover:bg-background/40 transition-colors group">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2 font-bold text-slate-700">
-                        <Table2 className="h-4 w-4 text-slate-400" />
-                        {item.tabla}
+                  <tr key={item.res_cam_id} className="hover:bg-slate-50/80 transition-colors group">
+                    <td className="px-8 py-5">
+                      <div className="flex items-center gap-3">
+                        <div className="h-8 w-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-[#00aeef]/10 group-hover:text-[#00aeef] transition-colors">
+                          <Table2 className="h-4 w-4" />
+                        </div>
+                        <span className="font-bold text-slate-700 text-sm">{item.res_cam_tabla}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 italic font-medium text-slate-500">
+                    <td className="px-8 py-5">
                       <div className="flex items-center gap-2">
-                        <Columns className="h-4 w-4 text-slate-300" />
-                        {item.columna}
+                        <Columns className="h-3.5 w-3.5 text-slate-300" />
+                        <span className="text-xs font-mono bg-slate-100 px-2 py-1 rounded text-slate-600">{item.res_cam_columna}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-center">
-                      <Badge variant="outline" className={`font-black text-[9px] tracking-tight ${item.oculto ? 'bg-orange-500/10 text-orange-600 border-orange-500/20' : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'}`}>
-                        {item.oculto ? <><EyeOff className="h-3 w-3 mr-1" /> OCULTO</> : <><Eye className="h-3 w-3 mr-1" /> VISIBLE</>}
-                      </Badge>
+                    <td className="px-8 py-5">
+                      <div className="flex flex-wrap gap-1.5 max-w-[300px]">
+                        {(!item.perfiles?.length && !item.usuarios?.length) && (
+                          <Badge variant="outline" className="bg-slate-50 text-slate-400 border-slate-200 text-[9px] font-bold">GLOBAL (TODOS)</Badge>
+                        )}
+                        {item.perfiles?.map(p => (
+                          <Badge key={p.perfil.perfil_cod} className="bg-[#dae2fd] text-[#3f465c] border-transparent text-[9px] font-bold">
+                            P: {p.perfil.perfil_nombre}
+                          </Badge>
+                        ))}
+                        {item.usuarios?.map(u => (
+                          <Badge key={u.usuario.usuario_email} className="bg-emerald-50 text-emerald-600 border-emerald-100 text-[9px] font-bold">
+                            U: {u.usuario.usuario_nombre}
+                          </Badge>
+                        ))}
+                      </div>
                     </td>
-                    <td className="px-6 py-4 text-center">
-                      <Badge variant="outline" className={`font-black text-[9px] tracking-tight ${!item.editable ? 'bg-red-500/10 text-red-600 border-red-500/20' : 'bg-blue-500/10 text-blue-600 border-blue-500/20'}`}>
-                        {!item.editable ? <><Lock className="h-3 w-3 mr-1" /> SOLO LECTURA</> : <><Unlock className="h-3 w-3 mr-1" /> EDITABLE</>}
-                      </Badge>
+                    <td className="px-8 py-5">
+                      <div className="flex items-center justify-center gap-2">
+                        <Badge className={`h-6 rounded-full px-3 text-[9px] font-black tracking-widest ${item.res_cam_oculto ? 'bg-orange-500 shadow-lg shadow-orange-500/20' : 'bg-emerald-500 shadow-lg shadow-emerald-500/20'}`}>
+                          {item.res_cam_oculto ? 'OCULTO' : 'VISIBLE'}
+                        </Badge>
+                        <Badge className={`h-6 rounded-full px-3 text-[9px] font-black tracking-widest ${!item.res_cam_editable ? 'bg-red-500 shadow-lg shadow-red-500/20' : 'bg-blue-500 shadow-lg shadow-blue-500/20'}`}>
+                          {!item.res_cam_editable ? 'LOCK' : 'EDIT'}
+                        </Badge>
+                      </div>
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button onClick={() => openEdit(item)} variant="outline" size="sm" className="h-8 gap-2 border-border hover:bg-background group-hover:border-accent group-hover:text-accent transition-all px-3 font-bold text-xs">
-                          <Edit3 className="h-3.5 w-3.5" /> Editar
+                    <td className="px-8 py-5 text-right">
+                      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button onClick={() => openEdit(item)} variant="outline" size="sm" className="h-8 rounded-lg border-slate-200 hover:border-[#00aeef] hover:text-[#00aeef] font-bold text-[11px] bg-white">
+                          <Edit3 className="h-3.5 w-3.5 mr-1" /> Editar
                         </Button>
-                        <Button onClick={() => handleDeleteClick(item.id)} variant="outline" size="sm" className="h-8 w-8 p-0 text-red-500 border-transparent hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></Button>
+                        <Button onClick={() => handleDeleteClick(item.res_cam_id)} variant="outline" size="sm" className="h-8 w-8 p-0 rounded-lg text-red-400 hover:bg-red-50 border-transparent">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -266,94 +341,140 @@ export default function RestriccionesPage() {
           
           {/* Paginación */}
           {!loading && (
-            <div className="flex items-center justify-between px-6 py-4 bg-background/50 border-t border-border">
-              <p className="text-xs text-muted font-medium">
-                Mostrando <span className="text-foreground font-bold">{restricciones.length > 0 ? startIndex + 1 : 0}</span> a <span className="text-foreground font-bold">{Math.min(startIndex + itemsPerPage, restricciones.length)}</span> de <span className="text-foreground font-bold">{restricciones.length}</span> reglas
+            <div className="flex items-center justify-between px-8 py-5 bg-slate-50/30 border-t border-slate-100">
+              <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest">
+                Reglas: <span className="text-slate-700">{restricciones.length}</span> totales
               </p>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goToPage(1)} disabled={currentPage === 1 || totalPages <= 1} title="Primero"><ChevronsLeft className="h-4 w-4" /></Button>
-                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1 || totalPages <= 1} title="Anterior"><ChevronLeft className="h-4 w-4" /></Button>
-                
-                <div className="flex items-center gap-1 mx-2">
-                  <Badge variant="secondary" className="h-8 w-8 flex items-center justify-center p-0 rounded-lg bg-accent/10 text-accent font-bold border-accent/20">
-                    {currentPage}
-                  </Badge>
-                  <span className="text-xs text-muted font-bold px-1">de</span>
-                  <span className="text-xs text-muted font-bold px-1">{totalPages || 1}</span>
+                <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg" onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1 || totalPages <= 1}><ChevronLeft className="h-4 w-4" /></Button>
+                <div className="px-4 text-[11px] font-black text-slate-600 bg-white border border-slate-200 rounded-lg h-8 flex items-center shadow-sm">
+                  {currentPage} / {totalPages || 1}
                 </div>
-
-                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages || totalPages <= 1} title="Siguiente"><ChevronRight className="h-4 w-4" /></Button>
-                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goToPage(totalPages)} disabled={currentPage === totalPages || totalPages <= 1} title="Último"><ChevronsRight className="h-4 w-4" /></Button>
+                <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg" onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages || totalPages <= 1}><ChevronRight className="h-4 w-4" /></Button>
               </div>
             </div>
           )}
         </CardContent>
       </Card>
 
-      <CustomModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingItem ? "Editar Restricción" : "Nueva Restricción"}>
-        <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-          <div className="space-y-2">
-            <Label>Tabla de Base de Datos</Label>
-            <select 
-              className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              value={formData.tabla}
-              onChange={e => setFormData({...formData, tabla: e.target.value})}
-              required
-            >
-              <option value="">Seleccionar una tabla...</option>
-              {tables.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
+      <CustomModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        title={editingItem ? "Editar Regla de Seguridad" : "Configurar Nueva Restricción"}
+        className="max-w-3xl shadow-[0_50px_100px_-20px_rgba(0,101,141,0.2)] border-white/40 backdrop-blur-3xl bg-white/90"
+      >
+        <form onSubmit={handleSubmit} className="space-y-6 pt-4">
+          <div className="grid grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <Label className="text-[11px] font-black uppercase tracking-widest text-slate-400">Entidad / Tabla</Label>
+              <select 
+                className="flex h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-[#00aeef] outline-none shadow-sm transition-all"
+                value={formData.tabla}
+                onChange={e => setFormData({...formData, tabla: e.target.value})}
+                required
+              >
+                <option value="">Seleccionar tabla...</option>
+                {tables.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[11px] font-black uppercase tracking-widest text-slate-400">Atributo / Columna</Label>
+              <select 
+                className="flex h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-[#00aeef] outline-none shadow-sm transition-all disabled:opacity-50"
+                value={formData.columna}
+                onChange={e => setFormData({...formData, columna: e.target.value})}
+                required
+                disabled={!formData.tabla || loadingSchema}
+              >
+                <option value="">{loadingSchema ? "Obteniendo esquema..." : "Seleccionar campo..."}</option>
+                {columns.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label>Campo / Columna</Label>
-            <select 
-              className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              value={formData.columna}
-              onChange={e => setFormData({...formData, columna: e.target.value})}
-              required
-              disabled={!formData.tabla || loadingSchema}
-            >
-              <option value="">{loadingSchema ? "Cargando columnas..." : "Seleccionar una columna..."}</option>
-              {columns.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+
+          <div className="grid grid-cols-2 gap-6">
+            <div className="space-y-3">
+              <Label className="text-[11px] font-black uppercase tracking-widest text-slate-400">Alcance por Perfil</Label>
+              <div className="border border-slate-100 rounded-2xl p-4 bg-slate-50/50 max-h-40 overflow-y-auto space-y-2 custom-scrollbar">
+                {allPerfiles.map(p => (
+                  <label key={p.perfil_cod} className="flex items-center gap-3 p-2 rounded-xl hover:bg-white cursor-pointer transition-all border border-transparent hover:border-slate-100 group">
+                    <input 
+                      type="checkbox" 
+                      checked={formData.perfiles.includes(p.perfil_cod)}
+                      onChange={() => toggleSelection('perfiles', p.perfil_cod)}
+                      className="h-4 w-4 rounded-md border-slate-300 text-[#00aeef] focus:ring-[#00aeef]"
+                    />
+                    <span className="text-xs font-bold text-slate-600 group-hover:text-slate-900">{p.perfil_nombre}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-3">
+              <Label className="text-[11px] font-black uppercase tracking-widest text-slate-400">Alcance por Usuario</Label>
+              <div className="border border-slate-100 rounded-2xl p-4 bg-slate-50/50 max-h-40 overflow-y-auto space-y-2 custom-scrollbar">
+                {allUsers.map(u => (
+                  <label key={u.usuario_email} className="flex items-center gap-3 p-2 rounded-xl hover:bg-white cursor-pointer transition-all border border-transparent hover:border-slate-100 group">
+                    <input 
+                      type="checkbox" 
+                      checked={formData.usuarios.includes(u.usuario_email)}
+                      onChange={() => toggleSelection('usuarios', u.usuario_email)}
+                      className="h-4 w-4 rounded-md border-slate-300 text-[#00aeef] focus:ring-[#00aeef]"
+                    />
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-slate-600 group-hover:text-slate-900">{u.usuario_nombre}</span>
+                      <span className="text-[10px] text-slate-400">{u.usuario_email}</span>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
           
-          <div className="grid grid-cols-2 gap-4 pt-2">
+          <div className="grid grid-cols-2 gap-6">
             <div 
               onClick={() => setFormData({...formData, oculto: !formData.oculto})}
-              className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${formData.oculto ? 'bg-orange-50 border-orange-200' : 'bg-slate-50 border-slate-100'}`}
+              className={`flex items-center gap-4 p-5 rounded-3xl border-2 cursor-pointer transition-all ${formData.oculto ? 'bg-orange-50 border-orange-200' : 'bg-white border-slate-100 hover:border-slate-200'}`}
             >
-              <div className={`p-2 rounded-lg ${formData.oculto ? 'bg-orange-500 text-white shadow-lg shadow-orange-200' : 'bg-white text-slate-400 border border-slate-200'}`}>
-                <EyeOff className="h-4 w-4" />
+              <div className={`p-3 rounded-2xl ${formData.oculto ? 'bg-orange-500 text-white shadow-xl shadow-orange-200' : 'bg-slate-100 text-slate-400'}`}>
+                <EyeOff className="h-5 w-5" />
               </div>
-              <div>
-                <p className="text-xs font-black uppercase tracking-widest leading-none mb-1">Oculto</p>
-                <p className="text-[10px] text-muted-foreground font-medium">No se muestra en UI</p>
+              <div className="flex-1">
+                <p className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">Visibilidad</p>
+                <p className="text-sm font-bold text-slate-700">{formData.oculto ? 'Campo Oculto' : 'Campo Visible'}</p>
+              </div>
+              <div className={`h-6 w-10 rounded-full flex items-center px-1 transition-all ${formData.oculto ? 'bg-orange-500' : 'bg-slate-200'}`}>
+                <div className={`h-4 w-4 bg-white rounded-full transition-transform ${formData.oculto ? 'translate-x-4' : 'translate-x-0'}`} />
               </div>
             </div>
 
             <div 
               onClick={() => setFormData({...formData, editable: !formData.editable})}
-              className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${!formData.editable ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}
+              className={`flex items-center gap-4 p-5 rounded-3xl border-2 cursor-pointer transition-all ${!formData.editable ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}
             >
-              <div className={`p-2 rounded-lg ${!formData.editable ? 'bg-red-500 text-white shadow-lg shadow-red-200' : 'bg-blue-500 text-white shadow-lg shadow-blue-200'}`}>
-                {formData.editable ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+              <div className={`p-3 rounded-2xl ${!formData.editable ? 'bg-red-500 text-white shadow-xl shadow-red-200' : 'bg-blue-500 text-white shadow-xl shadow-blue-200'}`}>
+                {formData.editable ? <Unlock className="h-5 w-5" /> : <Lock className="h-5 w-5" />}
               </div>
-              <div>
-                <p className="text-xs font-black uppercase tracking-widest leading-none mb-1">{formData.editable ? 'Editable' : 'Solo Lectura'}</p>
-                <p className="text-[10px] text-muted-foreground font-medium">{formData.editable ? 'Permite cambios' : 'Campo bloqueado'}</p>
+              <div className="flex-1">
+                <p className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">Permiso de Edición</p>
+                <p className="text-sm font-bold text-slate-700">{formData.editable ? 'Editable' : 'Solo Lectura'}</p>
+              </div>
+              <div className={`h-6 w-10 rounded-full flex items-center px-1 transition-all ${formData.editable ? 'bg-blue-500' : 'bg-red-500'}`}>
+                <div className={`h-4 w-4 bg-white rounded-full transition-transform ${formData.editable ? 'translate-x-4' : 'translate-x-0'}`} />
               </div>
             </div>
           </div>
 
-          <div className="flex gap-3 pt-4">
-            <Button type="submit" className="flex-1 bg-accent text-white font-bold gap-2"><Save className="h-4 w-4" /> {editingItem ? "Actualizar Regla" : "Guardar Regla"}</Button>
-            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1">Cancelar</Button>
+          <div className="flex gap-4 pt-4">
+            <Button type="submit" disabled={isSubmitting} className="flex-1 bg-[#00aeef] hover:bg-[#00658d] text-white font-black uppercase tracking-widest text-xs h-14 rounded-2xl transition-all hover:scale-[1.02] active:scale-95 shadow-xl shadow-[#00aeef]/20">
+              {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <Save className="h-5 w-5 mr-2" />}
+              {isSubmitting ? "Procesando..." : (editingItem ? "Actualizar Directiva" : "Activar Restricción")}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1 h-14 rounded-2xl border-slate-200 text-slate-400 font-bold uppercase tracking-widest text-[11px] hover:bg-slate-50">Cerrar</Button>
           </div>
         </form>
       </CustomModal>
 
-      <ConfirmModal isOpen={isConfirmOpen} onClose={() => setIsConfirmOpen(false)} onConfirm={onConfirmDelete} title="¿Eliminar Regla?" description="Al eliminar esta restricción, el campo volverá a su estado por defecto." />
+      <ConfirmModal isOpen={isConfirmOpen} onClose={() => setIsConfirmOpen(false)} onConfirm={onConfirmDelete} title="¿Revocar Restricción?" description="Al eliminar esta directiva, los campos volverán a su comportamiento estándar para todos los usuarios." />
     </div>
   );
 }

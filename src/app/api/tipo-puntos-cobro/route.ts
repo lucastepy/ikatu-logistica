@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { getPrisma, prismaPublic } from "@/lib/prisma";
+const prisma = getPrisma("tenant_la_transportadora");
 
 export async function GET() {
   try {
@@ -8,11 +9,11 @@ export async function GET() {
     });
 
     const emails = Array.from(new Set([
-      ...data.map(i => i.tip_pun_pun_cob_usuario_alta),
-      ...data.map(i => i.tip_pun_pun_cob_usuario_mod)
+      ...data.map(i => i.usuario_alta),
+      ...data.map(i => i.usuario_mod)
     ].filter(Boolean)));
 
-    const users = await prisma.usuario.findMany({
+    const users = await prismaPublic.usuario.findMany({
       where: { usuario_email: { in: emails as string[] } },
       select: { usuario_email: true, usuario_nombre: true }
     });
@@ -21,8 +22,8 @@ export async function GET() {
 
     const enrichedData = data.map(item => ({
       ...item,
-      usuario_alta_nombre: userMap[item.tip_pun_pun_cob_usuario_alta] || item.tip_pun_pun_cob_usuario_alta,
-      usuario_mod_nombre: item.tip_pun_pun_cob_usuario_mod ? (userMap[item.tip_pun_pun_cob_usuario_mod] || item.tip_pun_pun_cob_usuario_mod) : null
+      usuario_alta_nombre: userMap[item.usuario_alta] || item.usuario_alta,
+      usuario_mod_nombre: item.usuario_mod ? (userMap[item.usuario_mod] || item.usuario_mod) : null
     }));
 
     return NextResponse.json(enrichedData);

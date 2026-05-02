@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { getPrisma } from "@/lib/prisma";
+const prisma = getPrisma("tenant_la_transportadora");
 
 export async function GET() {
   try {
@@ -18,8 +19,8 @@ export async function GET() {
           d.deposito_cap_vol_m3,
           d.deposito_estado,
           t.tipo_dep_dsc,
-          ST_X(d.deposito_geo::geometry) as lng,
-          ST_Y(d.deposito_geo::geometry) as lat
+          public.ST_X(d.deposito_geo::public.geometry) as lng,
+          public.ST_Y(d.deposito_geo::public.geometry) as lat
         FROM depositos d
         LEFT JOIN tipo_depositos t ON d.deposito_dep_tipo = t.tipo_dep_id
         ORDER BY d.deposito_id ASC
@@ -78,7 +79,7 @@ export async function POST(request: Request) {
     if (lat && lng) {
       await prisma.$executeRaw`
         UPDATE depositos 
-        SET deposito_geo = ST_SetSRID(ST_MakePoint(${parseFloat(lng)}, ${parseFloat(lat)}), 4326)
+        SET deposito_geo = public.ST_SetSRID(public.ST_MakePoint(${parseFloat(lng)}, ${parseFloat(lat)}), 4326)
         WHERE deposito_id = ${parseInt(deposito_id)}
       `;
     }
@@ -120,7 +121,7 @@ export async function PUT(request: Request) {
     if (lat && lng) {
       await prisma.$executeRaw`
         UPDATE depositos 
-        SET deposito_geo = ST_SetSRID(ST_MakePoint(${parseFloat(lng)}, ${parseFloat(lat)}), 4326)
+        SET deposito_geo = public.ST_SetSRID(public.ST_MakePoint(${parseFloat(lng)}, ${parseFloat(lat)}), 4326)
         WHERE deposito_id = ${id}
       `;
     }

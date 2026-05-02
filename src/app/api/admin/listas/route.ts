@@ -1,18 +1,16 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prismaPublic as prisma } from "@/lib/prisma";
 
 export async function GET() {
   try {
-    const [empresas, sucursales, perfiles] = await Promise.all([
-      prisma.empresa.findMany({ select: { empresa_cod: true, empresa_nom: true } }),
-      prisma.sucursal.findMany({ select: { suc_id: true, suc_nombre: true } }),
-      prisma.perfil.findMany({ select: { perfil_cod: true, perfil_nombre: true } })
+    const [perfiles, clientes] = await Promise.all([
+      prisma.perfil.findMany({ select: { perfil_cod: true, perfil_nombre: true } }),
+      prisma.clienteSaas.findMany({ select: { cli_saas_cod: true, cli_saas_nom: true, cli_saas_tenant: true } })
     ]);
 
     return NextResponse.json({
-      empresas,
-      sucursales,
-      perfiles
+      perfiles,
+      clientes
     });
   } catch (error) {
     return NextResponse.json({ error: "Error al cargar listas" }, { status: 500 });

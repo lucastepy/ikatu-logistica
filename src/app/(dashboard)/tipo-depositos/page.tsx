@@ -5,13 +5,24 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { CustomModal } from "@/components/ui/dialog-custom";
 import { ConfirmModal } from "@/components/ui/modal-confirm";
 import { 
-  Plus, Database, Edit3, Trash2, CheckCircle2, Save, 
-  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search 
+  Plus, 
+  Search, 
+  Edit3, 
+  Trash2, 
+  CheckCircle2, 
+  Save, 
+  Database,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Loader2
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { useFieldSecurity } from "@/hooks/useFieldSecurity";
 
 interface TipoDeposito {
   tipo_dep_id: number;
@@ -20,8 +31,10 @@ interface TipoDeposito {
 }
 
 export default function TipoDepositosPage() {
+  const { isHidden, isReadOnly, loadingRestrictions } = useFieldSecurity("TipoDeposito");
   const [data, setData] = useState<TipoDeposito[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   
@@ -46,12 +59,23 @@ export default function TipoDepositosPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/tipo-depositos");
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+
+      const res = await fetch("/api/admin/tipo-depositos", {
+        headers: { 
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        }
+      });
       const json = await res.json();
       setData(Array.isArray(json) ? json : []);
       setCurrentPage(1);
     } catch (e) {
       console.error(e);
+      setData([]);
     } finally {
       setLoading(false);
     }
@@ -69,29 +93,46 @@ export default function TipoDepositosPage() {
 
   const openEdit = (item: TipoDeposito) => {
     setEditingItem(item);
-    setFormData({ dsc: item.tipo_dep_dsc, estado: item.tipo_dep_estado });
+    setFormData({ dsc: item.tipo_dep_dsc || "", estado: item.tipo_dep_estado });
     setIsModalOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.dsc.trim()) return;
+    setIsSubmitting(true);
+    try {
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
 
-    const res = await fetch("/api/admin/tipo-depositos", {
-      method: "POST",
-      body: JSON.stringify({ 
-        id: editingItem?.tipo_dep_id, 
-        dsc: formData.dsc, 
-        estado: formData.estado,
-        isEdit: !!editingItem 
-      }),
-      headers: { "Content-Type": "application/json" }
-    });
+      const res = await fetch("/api/admin/tipo-depositos", {
+        method: "POST",
+        body: JSON.stringify({ 
+          id: editingItem?.tipo_dep_id, 
+          dsc: formData.dsc, 
+          estado: formData.estado,
+          isEdit: !!editingItem 
+        }),
+        headers: { 
+          "Content-Type": "application/json",
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        }
+      });
 
-    if (res.ok) {
-      setIsModalOpen(false);
-      showToast(editingItem ? "Registro actualizado" : "Registro creado");
-      fetchData();
+      if (res.ok) {
+        setIsModalOpen(false);
+        showToast(editingItem ? "Registro actualizado" : "Registro creado");
+        fetchData();
+      } else {
+        showToast("Error al guardar registro");
+      }
+    } catch (e) {
+      console.error(e);
+      showToast("Error de conexión");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -102,7 +143,18 @@ export default function TipoDepositosPage() {
 
   const onConfirmDelete = async () => {
     if (!itemToDelete) return;
-    const res = await fetch(`/api/admin/tipo-depositos?id=${itemToDelete}`, { method: "DELETE" });
+    const userJson = localStorage.getItem("user");
+    const user = userJson ? JSON.parse(userJson) : null;
+    const tenantId = user?.tenantId || "public";
+
+    const res = await fetch(`/api/admin/tipo-depositos?id=${itemToDelete}`, { 
+      method: "DELETE",
+      headers: { 
+        "x-tenant-id": tenantId,
+        "x-user-email": user?.email || "",
+        "x-user-profile": user?.perfil_cod?.toString() || ""
+      }
+    });
     if (res.ok) {
       setIsConfirmOpen(false);
       showToast("Registro eliminado");
@@ -111,7 +163,7 @@ export default function TipoDepositosPage() {
   };
 
   const filteredData = data.filter(item => 
-    item.tipo_dep_dsc.toLowerCase().includes(searchTerm.toLowerCase())
+    (item.tipo_dep_dsc || "").toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
@@ -121,6 +173,10 @@ export default function TipoDepositosPage() {
   const goToPage = (page: number) => {
     if (page >= 1 && page <= totalPages) setCurrentPage(page);
   };
+
+  if (loadingRestrictions && loading) {
+    return <div className="h-screen flex items-center justify-center text-slate-400 font-bold uppercase tracking-widest animate-pulse">Sincronizando Seguridad...</div>;
+  }
 
   return (
     <div className="p-8 space-y-8 animate-in fade-in duration-500 relative">
@@ -166,9 +222,9 @@ export default function TipoDepositosPage() {
             <table className="w-full text-left">
               <thead>
                 <tr className="bg-slate-50/50 border-b border-slate-100 text-[11px] uppercase tracking-widest text-slate-400 font-black">
-                  <th className="px-8 py-4 w-24 text-center">ID</th>
-                  <th className="px-8 py-4">Descripción del Tipo</th>
-                  <th className="px-8 py-4 text-center">Estado</th>
+                  {!isHidden("tipo_dep_id") && <th className="px-8 py-4 w-24 text-center">ID</th>}
+                  {!isHidden("tipo_dep_dsc") && <th className="px-8 py-4">Descripción del Tipo</th>}
+                  {!isHidden("tipo_dep_estado") && <th className="px-8 py-4 text-center">Estado</th>}
                   <th className="px-8 py-4 text-right">Acciones</th>
                 </tr>
               </thead>
@@ -179,24 +235,28 @@ export default function TipoDepositosPage() {
                   <tr><td colSpan={4} className="px-8 py-10 text-center text-slate-400 italic">No se encontraron depósitos con ese criterio.</td></tr>
                 ) : currentItems.map((item) => (
                   <tr key={item.tipo_dep_id} className="hover:bg-slate-50/30 transition-colors group">
-                    <td className="px-8 py-4 font-mono text-[11px] text-accent font-bold text-center">#{item.tipo_dep_id}</td>
-                    <td className="px-8 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-lg bg-accent/5 text-accent">
-                          <Database className="h-4 w-4" />
+                    {!isHidden("tipo_dep_id") && <td className="px-8 py-4 font-mono text-[11px] text-accent font-bold text-center">#{item.tipo_dep_id}</td>}
+                    {!isHidden("tipo_dep_dsc") && (
+                      <td className="px-8 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-lg bg-accent/5 text-accent">
+                            <Database className="h-4 w-4" />
+                          </div>
+                          <span className="font-bold text-slate-700">{item.tipo_dep_dsc}</span>
                         </div>
-                        <span className="font-bold text-slate-700">{item.tipo_dep_dsc}</span>
-                      </div>
-                    </td>
-                    <td className="px-8 py-4 text-center">
-                      <Badge className={`text-[9px] font-black tracking-widest border-none px-2.5 py-0.5 ${
-                        item.tipo_dep_estado 
-                        ? "bg-emerald-500/10 text-emerald-600" 
-                        : "bg-red-500/10 text-red-600"
-                      }`}>
-                        {item.tipo_dep_estado ? "ACTIVO" : "INACTIVO"}
-                      </Badge>
-                    </td>
+                      </td>
+                    )}
+                    {!isHidden("tipo_dep_estado") && (
+                      <td className="px-8 py-4 text-center">
+                        <Badge className={`text-[9px] font-black tracking-widest border-none px-2.5 py-0.5 ${
+                          item.tipo_dep_estado 
+                          ? "bg-emerald-500/10 text-emerald-600" 
+                          : "bg-red-500/10 text-red-600"
+                        }`}>
+                          {item.tipo_dep_estado ? "ACTIVO" : "INACTIVO"}
+                        </Badge>
+                      </td>
+                    )}
                     <td className="px-8 py-4 text-right">
                       <div className="flex justify-end gap-2">
                         <button onClick={() => openEdit(item)} className="h-8 flex items-center gap-2 border border-slate-200 hover:bg-slate-50 transition-all px-3 font-bold text-xs shadow-sm text-slate-600 rounded-lg">
@@ -235,34 +295,47 @@ export default function TipoDepositosPage() {
         </CardContent>
       </Card>
 
-      <CustomModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingItem ? "Editar Tipo de Depósito" : "Crear Tipo de Depósito"}>
+      <CustomModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        title={editingItem ? "Editar Tipo de Depósito" : "Crear Tipo de Depósito"}
+        className="max-w-2xl shadow-[0_50px_100px_-20px_rgba(0,0,0,0.3)] border-white/50 backdrop-blur-xl"
+      >
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-          <div className="space-y-2">
-            <Label className="text-xs font-bold uppercase tracking-widest text-slate-500">Descripción del Tipo</Label>
-            <Input 
-              value={formData.dsc} 
-              onChange={(e) => setFormData({...formData, dsc: e.target.value})} 
-              placeholder="Ej: Cámara Fría, General, Mercadería..."
-              className="h-11 border-slate-200 focus-visible:ring-accent font-medium rounded-xl"
-              required 
-              autoFocus
-            />
-          </div>
-          <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 border border-slate-200">
-             <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-700">Estado del Registro</Label>
-                <p className="text-[10px] text-slate-400 font-medium">Define si el tipo estará disponible para su uso.</p>
-             </div>
-             <input 
-                type="checkbox" 
-                checked={formData.estado} 
-                onChange={e => setFormData({...formData, estado: e.target.checked})}
-                className={`h-5 w-5 accent-accent ${!editingItem ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
-                disabled={!editingItem}
-             />
-          </div>
+          {!isHidden("tipo_dep_dsc") && (
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase tracking-widest text-slate-500">Descripción del Tipo</Label>
+              <Input 
+                value={formData.dsc} 
+                onChange={(e) => setFormData({...formData, dsc: e.target.value})} 
+                placeholder="Ej: Cámara Fría, General, Mercadería..."
+                className="h-12 border-slate-200 focus-visible:ring-accent font-medium rounded-xl text-slate-950 bg-white shadow-sm"
+                required 
+                autoFocus
+                disabled={isReadOnly("tipo_dep_dsc")}
+              />
+            </div>
+          )}
+          {!isHidden("tipo_dep_estado") && (
+            <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 border border-slate-200">
+              <div className="space-y-1">
+                  <Label className="text-xs font-bold text-slate-700">Estado del Registro</Label>
+                  <p className="text-[10px] text-slate-400 font-medium">Define si el tipo estará disponible para su uso.</p>
+              </div>
+              <input 
+                  type="checkbox" 
+                  checked={formData.estado} 
+                  onChange={e => setFormData({...formData, estado: e.target.checked})}
+                  className={`h-5 w-5 accent-accent ${(!editingItem || isReadOnly("tipo_dep_estado")) ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
+                  disabled={!editingItem || isReadOnly("tipo_dep_estado")}
+              />
+            </div>
+          )}
           <div className="flex gap-3 pt-4">
-            <Button type="submit" className="flex-1 bg-accent text-white font-bold h-12 rounded-xl gap-2 shadow-lg shadow-accent/20"><Save className="h-4 w-4" /> {editingItem ? "Actualizar Registro" : "Guardar Registro"}</Button>
+            <Button type="submit" disabled={isSubmitting} className="flex-1 bg-accent text-white font-bold h-12 rounded-xl gap-2 shadow-lg shadow-accent/20 transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-70 disabled:scale-100">
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {isSubmitting ? "Procesando..." : (editingItem ? "Actualizar Registro" : "Guardar Registro")}
+            </Button>
             <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1 h-12 rounded-xl">Cancelar</Button>
           </div>
         </form>

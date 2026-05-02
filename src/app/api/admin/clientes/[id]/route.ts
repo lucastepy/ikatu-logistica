@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { getPrisma } from "@/lib/prisma";
 
-const prisma = new PrismaClient();
+const prisma = getPrisma("tenant_la_transportadora");
 
-export async function PUT(request: Request, { params }: { params: { id: string } }) {
+export async function PUT(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const id = params.id;
+    const { id } = await params;
     const body = await request.json();
     const { razonSocial, tipDocId, nroDoc, esContribuyente, telefono, email, estado } = body;
 
@@ -32,9 +35,12 @@ export async function PUT(request: Request, { params }: { params: { id: string }
   }
 }
 
-export async function DELETE(request: Request, { params }: { params: { id: string } }) {
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const id = params.id;
+    const { id } = await params;
 
     // Borrado lógico: Actualizamos el estado a 'I'
     const clienteEliminado = await prisma.cliente.update({

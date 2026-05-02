@@ -1,5 +1,7 @@
 "use client";
 
+import { useFieldSecurity } from "@/hooks/useFieldSecurity";
+
 import { useEffect, useState, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,7 +13,7 @@ import {
   Plus, Edit, Trash2, Save, MapPin, Truck, Users, Calendar, 
   CreditCard, Package, Navigation, ChevronLeft, ChevronRight, 
   ChevronsLeft, ChevronsRight, Hexagon, Route, Map as MapIcon,
-  Search, Info, AlertTriangle, CheckCircle2, Clock, UserPlus, History as HistoryIcon, ArrowRight
+  Search, Info, AlertTriangle, CheckCircle2, Clock, UserPlus, History as HistoryIcon, ArrowRight, Shield
 } from "lucide-react";
 import { getLoggedUserEmail } from "@/lib/auth-utils";
 import { Badge } from "@/components/ui/badge";
@@ -25,10 +27,21 @@ const StatusTransition = ({ viaId, estadoActual, estadoActualNombre, onChanged }
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch(`/api/viajes/cambiar-estado?viaId=${viaId}`)
+    const usuario = getLoggedUserEmail();
+    console.log(`[StatusTransition] Fetching for viaId=${viaId}, user=${usuario}`);
+    fetch(`/api/viajes/cambiar-estado?viaId=${viaId}&usuario=${usuario}&t=${Date.now()}`)
       .then(res => res.json())
-      .then(setTransiciones)
-      .catch(console.error);
+      .then(data => {
+        console.log(`[StatusTransition] Received data:`, data);
+        if (Array.isArray(data)) {
+          setTransiciones(data);
+        } else if (data && data.transiciones) {
+          setTransiciones(data.transiciones);
+        } else {
+          setTransiciones([]);
+        }
+      })
+      .catch(err => console.error("[StatusTransition] Fetch error:", err));
   }, [viaId, estadoActual]);
 
   const handleAction = async (nuevoEstadoId: number) => {
@@ -78,15 +91,35 @@ const StatusTransition = ({ viaId, estadoActual, estadoActualNombre, onChanged }
       {transiciones.length > 0 && (
         <div className="flex gap-2 flex-wrap justify-center mt-1">
           {transiciones.map(t => (
-            <button
-              key={t.id}
-              disabled={loading}
-              onClick={() => handleAction(t.estadoSiguienteId)}
-              className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 px-3 py-1 rounded-full transition-all shadow-sm hover:shadow-md disabled:opacity-50 group"
-            >
-              <div className="h-1.5 w-1.5 rounded-full bg-slate-300 group-hover:bg-[#00a3e0] transition-colors" />
-              {t.accion}
-            </button>
+            <div key={t.id} className="relative group">
+              <button
+                disabled={loading || !t.canExecute}
+                onClick={() => handleAction(t.estadoSiguienteId)}
+                className={`
+                  flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider 
+                  px-3 py-1 rounded-full transition-all shadow-sm border
+                  ${t.canExecute 
+                    ? "bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:shadow-md active:scale-95" 
+                    : "bg-slate-100/50 border-slate-200/60 text-slate-400 cursor-not-allowed"
+                  }
+                `}
+              >
+                <div className={`h-1.5 w-1.5 rounded-full ${t.canExecute ? "bg-[#00a3e0]" : "bg-slate-300"}`} />
+                {t.accion}
+              </button>
+
+              {!t.canExecute && (
+                <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-[100] scale-90 group-hover:scale-100 transform origin-left">
+                   <div className="flex items-center">
+                     <div className="w-2 h-2 bg-slate-800 rotate-45 -mr-1 border-l border-b border-white/5" />
+                     <div className="bg-slate-800/95 backdrop-blur-sm text-white text-[10px] px-3 py-2 rounded-xl whitespace-nowrap shadow-2xl border border-white/10 flex flex-col items-start gap-0.5">
+                        <span className="text-slate-400 font-medium">ACCESO RESTRINGIDO</span>
+                        <span className="font-bold text-[#00a3e0] uppercase tracking-wider text-[9px]">SOLO {t.perfilAutorizadoNom || 'ADMINISTRADOR'}</span>
+                     </div>
+                   </div>
+                </div>
+              )}
+            </div>
           ))}
         </div>
       )}
@@ -95,6 +128,7 @@ const StatusTransition = ({ viaId, estadoActual, estadoActualNombre, onChanged }
 };
 
 export default function ViajesPage() {
+  const { isHidden, isReadOnly, loadingRestrictions } = useFieldSecurity("Viaje");
   const [loading, setLoading] = useState(true);
   const [viajes, setViajes] = useState<any[]>([]);
   const [toast, setToast] = useState<string | null>(null);
@@ -158,17 +192,27 @@ export default function ViajesPage() {
     
     const loadList = async (url: string, setter: (data: any[]) => void, name: string) => {
       try {
-        const res = await fetch(url);
+        const userJson = localStorage.getItem("user");
+        const user = userJson ? JSON.parse(userJson) : null;
+        const tenantId = user?.tenantId || "public";
+        
+        const res = await fetch(url, {
+          headers: {
+            "x-tenant-id": tenantId,
+            "x-user-email": user?.email || "",
+            "x-user-profile": user?.perfil_cod?.toString() || ""
+          }
+        });
         if (res.ok) {
           const data = await res.json();
-          console.log(`Cargados ${data.length || 0} registros de ${name}`);
+          console.log(`[Viajes] Cargados ${data.length || 0} registros de ${name}`, data);
           setter(Array.isArray(data) ? data : []);
         } else {
-          console.error(`Error en API ${name}: ${res.status}`);
+          console.error(`[Viajes] Error en API ${name}: ${res.status}`);
           setter([]);
         }
       } catch (e) {
-        console.error(`Fallo crítico al cargar ${name}:`, e);
+        console.error(`[Viajes] Fallo crítico al cargar ${name}:`, e);
         setter([]);
       }
     };
@@ -237,20 +281,25 @@ export default function ViajesPage() {
   const openEdit = (v: any) => {
     setIsEdit(true);
     setCurrentId(v.via_id);
+    const destinosIds = v.destinos?.map((d: any) => d.zon_id || d.cli_id) || [];
+    
+    const isRuta = v.via_tipo === "RUTA" || v.via_tipo === "CLIENTE";
+    
     setForm({
       movilId: v.via_movil_id.toString(),
       choferDoc: v.via_chofer_doc,
       ayudanteDoc: v.via_ayudante_doc || "",
       formaPagoId: v.via_forma_pago_gastos_id.toString(),
       depositoId: v.via_deposito_origen_id.toString(),
-      tipo: v.via_tipo,
+      tipo: isRuta ? "RUTA" : "ZONA",
       fechaProgramada: new Date(v.via_fecha_programada).toISOString().split('T')[0],
-      selectedZonas: v.via_tipo === "ZONA" ? v.zonas?.map((z: any) => z.zon_id) || [] : [],
-      selectedClientes: v.via_tipo === "RUTA" ? v.zonas?.map((z: any) => z.cli_id) || [] : [],
-      puntosCobroDetectados: v.puntos_cobro?.map((pc: any) => ({
+      selectedZonas: v.via_tipo === "ZONA" ? destinosIds : [],
+      selectedClientes: isRuta ? destinosIds : [],
+      puntosCobroDetectados: v.peajes?.map((pc: any) => ({
         id: pc.vpc_pun_cob_id,
         nombre: pc.pun_cob_nombre || "Peaje",
-        monto: pc.vpc_monto
+        monto: pc.vpc_monto,
+        tipo: "PEAJE"
       })) || []
     });
     setIsModalOpen(true);
@@ -267,10 +316,19 @@ export default function ViajesPage() {
       usuario
     };
 
+    const userJson = localStorage.getItem("user");
+    const user = userJson ? JSON.parse(userJson) : null;
+    const tenantId = user?.tenantId || "public";
+
     const res = await fetch("/api/viajes", {
       method: isEdit ? "PUT" : "POST",
       body: JSON.stringify(body),
-      headers: { "Content-Type": "application/json" }
+      headers: { 
+        "Content-Type": "application/json",
+        "x-tenant-id": tenantId,
+        "x-user-email": user?.email || "",
+        "x-user-profile": user?.perfil_cod?.toString() || ""
+      }
     });
 
     if (res.ok) {
@@ -287,7 +345,18 @@ export default function ViajesPage() {
     if (!confirm("¿Está seguro que desea eliminar este viaje?")) return;
     
     try {
-      const res = await fetch(`/api/viajes?id=${id}`, { method: "DELETE" });
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+
+      const res = await fetch(`/api/viajes?id=${id}`, { 
+        method: "DELETE",
+        headers: {
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        }
+      });
       if (res.ok) {
         showToast("Viaje eliminado correctamente");
         fetchData();
@@ -309,8 +378,12 @@ export default function ViajesPage() {
     }).format(amount);
   };
 
+  if (loadingRestrictions && loading) {
+    return <div className="h-screen flex items-center justify-center text-slate-400 font-bold uppercase tracking-widest animate-pulse">Sincronizando Seguridad...</div>;
+  }
+
   return (
-    <div className="p-8 space-y-6 animate-in fade-in duration-500 bg-[#f8fafc] min-h-screen">
+    <div className="p-8 space-y-6 animate-in fade-in duration-500 bg-[#f8fafc] min-h-screen text-slate-700">
       <div className="flex justify-between items-start">
         <div>
           <h1 className="text-[32px] font-bold tracking-tight text-[#00a3e0] flex items-center gap-3">
@@ -339,11 +412,11 @@ export default function ViajesPage() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-white text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">
-                  <th className="px-6 py-4 w-20">ID</th>
-                  <th className="px-6 py-4">MÓVIL / CHAPA</th>
-                  <th className="px-6 py-4">PERSONAL</th>
-                  <th className="px-6 py-4">TIPO / DESTINOS</th>
-                  <th className="px-6 py-4">FECHA PROG.</th>
+                  {!isHidden("via_id") && <th className="px-6 py-4 w-20">ID</th>}
+                  {!isHidden("via_movil_id") && <th className="px-6 py-4">MÓVIL / CHAPA</th>}
+                  {(!isHidden("via_chofer_doc") || !isHidden("via_ayudante_doc")) && <th className="px-6 py-4">PERSONAL</th>}
+                  {!isHidden("via_tipo") && <th className="px-6 py-4">TIPO / DESTINOS</th>}
+                  {!isHidden("via_fecha_programada") && <th className="px-6 py-4">FECHA PROG.</th>}
                   <th className="px-6 py-4 text-center">ESTADO</th>
                   <th className="px-6 py-4 text-center w-32">ACCIONES</th>
                 </tr>
@@ -355,41 +428,51 @@ export default function ViajesPage() {
                    <tr><td colSpan={10} className="px-6 py-12 text-center text-slate-400 italic">No hay viajes programados.</td></tr>
                 ) : viajes.map((v) => (
                   <tr key={v.via_id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-6 py-4 text-xs text-slate-400 font-medium">#{v.via_id}</td>
-                    <td className="px-6 py-4">
-                       <div className="flex flex-col">
-                          <span className="font-bold text-slate-700 uppercase">{v.movil?.marca?.mov_mar_nombre} {v.movil?.modelo?.mov_mod_nombre}</span>
-                          <span className="text-[10px] font-black text-[#00a3e0] tracking-widest">{v.movil?.movil_chapa}</span>
-                       </div>
-                    </td>
-                    <td className="px-6 py-4">
-                       <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-2">
-                             <Badge variant="outline" className="bg-slate-50 text-[8px] font-black border-slate-200">CHO</Badge>
-                             <span className="text-xs font-bold text-slate-600">{v.chofer?.per_ent_nombre}</span>
-                          </div>
-                          {v.ayudante && (
-                             <div className="flex items-center gap-2">
-                                <Badge variant="outline" className="bg-slate-50 text-[8px] font-black border-slate-200">AYU</Badge>
-                                <span className="text-[11px] font-medium text-slate-500">{v.ayudante.per_ent_nombre}</span>
-                             </div>
-                          )}
-                       </div>
-                    </td>
-                    <td className="px-6 py-4">
-                       <div className="flex flex-col gap-1">
-                          <Badge className={`${v.via_tipo === 'ZONA' ? 'bg-amber-500' : 'bg-indigo-500'} text-[9px] font-bold w-fit`}>{v.via_tipo}</Badge>
-                          <span className="text-[10px] text-slate-400 italic font-medium">
-                             {v.via_tipo === 'ZONA' ? `${v.zonas?.length || 0} zonas` : `${v.clientes?.length || 0} clientes`}
-                          </span>
-                       </div>
-                    </td>
-                    <td className="px-6 py-4">
-                       <div className="flex items-center gap-2 text-slate-600">
-                          <Calendar className="h-3.5 w-3.5 text-[#00a3e0]" />
-                          <span className="text-xs font-bold text-slate-600">{formatDate(v.via_fecha_programada)}</span>
-                       </div>
-                    </td>
+                    {!isHidden("via_id") && <td className="px-6 py-4 text-xs text-slate-400 font-medium">#{v.via_id}</td>}
+                    {!isHidden("via_movil_id") && (
+                      <td className="px-6 py-4">
+                         <div className="flex flex-col">
+                            <span className="font-bold text-slate-700 uppercase">{v.movil?.marca?.mov_mar_nombre} {v.movil?.modelo?.mov_mod_nombre}</span>
+                            <span className="text-[10px] font-black text-[#00a3e0] tracking-widest">{v.movil?.movil_chapa}</span>
+                         </div>
+                      </td>
+                    )}
+                    {(!isHidden("via_chofer_doc") || !isHidden("via_ayudante_doc")) && (
+                      <td className="px-6 py-4">
+                         <div className="flex flex-col gap-1">
+                            {!isHidden("via_chofer_doc") && (
+                              <div className="flex items-center gap-2">
+                                 <Badge variant="outline" className="bg-slate-50 text-[8px] font-black border-slate-200">CHO</Badge>
+                                 <span className="text-xs font-bold text-slate-600">{v.chofer?.per_ent_nombre}</span>
+                              </div>
+                            )}
+                            {!isHidden("via_ayudante_doc") && v.ayudante && (
+                               <div className="flex items-center gap-2">
+                                  <Badge variant="outline" className="bg-slate-50 text-[8px] font-black border-slate-200">AYU</Badge>
+                                  <span className="text-[11px] font-medium text-slate-500">{v.ayudante.per_ent_nombre}</span>
+                               </div>
+                            )}
+                         </div>
+                      </td>
+                    )}
+                    {!isHidden("via_tipo") && (
+                      <td className="px-6 py-4">
+                         <div className="flex flex-col gap-1">
+                            <Badge className={`${v.via_tipo === 'ZONA' ? 'bg-amber-500' : 'bg-indigo-500'} text-[9px] font-bold w-fit`}>{v.via_tipo}</Badge>
+                            <span className="text-[10px] text-slate-400 italic font-medium">
+                               {v.destinos?.length || 0} {v.via_tipo === 'ZONA' ? 'zonas' : 'clientes'}
+                            </span>
+                         </div>
+                      </td>
+                    )}
+                    {!isHidden("via_fecha_programada") && (
+                      <td className="px-6 py-4">
+                         <div className="flex items-center gap-2 text-slate-600">
+                            <Calendar className="h-3.5 w-3.5 text-[#00a3e0]" />
+                            <span className="text-xs font-bold text-slate-600">{formatDate(v.via_fecha_programada)}</span>
+                         </div>
+                      </td>
+                    )}
                     <td className="px-6 py-4 text-center">
                        <StatusTransition 
                         viaId={v.via_id} 
@@ -458,28 +541,51 @@ export default function ViajesPage() {
                 <div className="space-y-4">
                   <h4 className="text-sm font-bold text-[#00a3e0] uppercase border-b border-slate-100 pb-2">Asignación de Personal y Móvil</h4>
                   <div className="grid grid-cols-1 gap-4">
-                    <div className="space-y-2">
-                      <Label className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase"><Truck className="h-3.5 w-3.5 text-[#00a3e0]" /> Móvil Asignado</Label>
-                      <select className="flex h-11 w-full rounded-xl border border-input bg-white px-3 text-sm focus:ring-2 focus:ring-[#00a3e0] outline-none" value={form.movilId} onChange={e => setForm({...form, movilId: e.target.value})} required>
-                        <option value="">Seleccione Móvil...</option>
-                        {moviles.map(m => <option key={m.movil_id} value={m.movil_id}>{m.movil_chapa} - {m.marca?.mov_mar_nombre} {m.modelo?.mov_mod_nombre}</option>)}
-                      </select>
-                    </div>
+                    {!isHidden("via_movil_id") && (
+                      <div className="space-y-2">
+                        <Label className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase"><Truck className="h-3.5 w-3.5 text-[#00a3e0]" /> Móvil Asignado</Label>
+                        <select 
+                          className="flex h-11 w-full rounded-xl border border-input bg-white px-3 text-sm focus:ring-2 focus:ring-[#00a3e0] outline-none" 
+                          value={form.movilId} 
+                          onChange={e => setForm({...form, movilId: e.target.value})} 
+                          required
+                          disabled={isReadOnly("via_movil_id")}
+                        >
+                          <option value="">Seleccione Móvil...</option>
+                          {moviles.map(m => <option key={m.movil_id} value={m.movil_id}>{m.movil_chapa} - {m.marca?.mov_mar_nombre} {m.modelo?.mov_mod_nombre}</option>)}
+                        </select>
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase"><Users className="h-3.5 w-3.5 text-[#00a3e0]" /> Chofer Principal</Label>
-                        <select className="flex h-11 w-full rounded-xl border border-input bg-white px-3 text-sm focus:ring-2 focus:ring-[#00a3e0] outline-none" value={form.choferDoc} onChange={e => setForm({...form, choferDoc: e.target.value})} required>
-                          <option value="">Seleccione Chofer...</option>
-                          {personal.filter(p => p.per_ent_tipo === 1).map(p => <option key={p.per_ent_documento} value={p.per_ent_documento}>{p.per_ent_nombre}</option>)}
-                        </select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase"><UserPlus className="h-3.5 w-3.5 text-[#00a3e0]" /> Ayudante</Label>
-                        <select className="flex h-11 w-full rounded-xl border border-input bg-white px-3 text-sm focus:ring-2 focus:ring-[#00a3e0] outline-none" value={form.ayudanteDoc} onChange={e => setForm({...form, ayudanteDoc: e.target.value})}>
-                          <option value="">(Sin Ayudante)</option>
-                          {personal.filter(p => p.per_ent_tipo === 2).map(p => <option key={p.per_ent_documento} value={p.per_ent_documento}>{p.per_ent_nombre}</option>)}
-                        </select>
-                      </div>
+                      {!isHidden("via_chofer_doc") && (
+                        <div className="space-y-2">
+                          <Label className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase"><Users className="h-3.5 w-3.5 text-[#00a3e0]" /> Chofer Principal</Label>
+                          <select 
+                            className="flex h-11 w-full rounded-xl border border-input bg-white px-3 text-sm focus:ring-2 focus:ring-[#00a3e0] outline-none" 
+                            value={form.choferDoc} 
+                            onChange={e => setForm({...form, choferDoc: e.target.value})} 
+                            required
+                            disabled={isReadOnly("via_chofer_doc")}
+                          >
+                            <option value="">Seleccione Chofer...</option>
+                            {personal.filter(p => p.per_ent_tipo === 1).map(p => <option key={p.per_ent_documento} value={p.per_ent_documento}>{p.per_ent_nombre}</option>)}
+                          </select>
+                        </div>
+                      )}
+                      {!isHidden("via_ayudante_doc") && (
+                        <div className="space-y-2">
+                          <Label className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase"><UserPlus className="h-3.5 w-3.5 text-[#00a3e0]" /> Ayudante</Label>
+                          <select 
+                            className="flex h-11 w-full rounded-xl border border-input bg-white px-3 text-sm focus:ring-2 focus:ring-[#00a3e0] outline-none" 
+                            value={form.ayudanteDoc} 
+                            onChange={e => setForm({...form, ayudanteDoc: e.target.value})}
+                            disabled={isReadOnly("via_ayudante_doc")}
+                          >
+                            <option value="">(Sin Ayudante)</option>
+                            {personal.filter(p => p.per_ent_tipo === 2).map(p => <option key={p.per_ent_documento} value={p.per_ent_documento}>{p.per_ent_nombre}</option>)}
+                          </select>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -487,24 +593,49 @@ export default function ViajesPage() {
                 <div className="space-y-4">
                   <h4 className="text-sm font-bold text-[#00a3e0] uppercase border-b border-slate-100 pb-2">Programación y Origen</h4>
                   <div className="grid grid-cols-1 gap-4">
-                    <div className="space-y-2">
-                      <Label className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase"><Calendar className="h-3.5 w-3.5 text-[#00a3e0]" /> Fecha Programada</Label>
-                      <Input type="date" value={form.fechaProgramada} onChange={e => setForm({...form, fechaProgramada: e.target.value})} required className="h-11 rounded-xl" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase"><Package className="h-3.5 w-3.5 text-[#00a3e0]" /> Depósito de Origen</Label>
-                      <select className="flex h-11 w-full rounded-xl border border-input bg-white px-3 text-sm focus:ring-2 focus:ring-[#00a3e0] outline-none" value={form.depositoId} onChange={e => setForm({...form, depositoId: e.target.value})} required>
-                        <option value="">Seleccione Origen...</option>
-                        {depositos.map(d => <option key={d.deposito_id} value={d.deposito_id}>{d.deposito_nombre}</option>)}
-                      </select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase"><CreditCard className="h-3.5 w-3.5 text-[#00a3e0]" /> Forma de Pago Gastos</Label>
-                      <select className="flex h-11 w-full rounded-xl border border-input bg-white px-3 text-sm focus:ring-2 focus:ring-[#00a3e0] outline-none" value={form.formaPagoId} onChange={e => setForm({...form, formaPagoId: e.target.value})} required>
-                        <option value="">Seleccione...</option>
-                        {formasPago.map(f => <option key={f.forma_pago_id} value={f.forma_pago_id}>{f.forma_pago_dsc}</option>)}
-                      </select>
-                    </div>
+                    {!isHidden("via_fecha_programada") && (
+                      <div className="space-y-2">
+                        <Label className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase"><Calendar className="h-3.5 w-3.5 text-[#00a3e0]" /> Fecha Programada</Label>
+                        <Input 
+                          type="date" 
+                          value={form.fechaProgramada} 
+                          onChange={e => setForm({...form, fechaProgramada: e.target.value})} 
+                          required 
+                          className="h-11 rounded-xl text-slate-700" 
+                          disabled={isReadOnly("via_fecha_programada")}
+                        />
+                      </div>
+                    )}
+                    {!isHidden("via_deposito_origen_id") && (
+                      <div className="space-y-2">
+                        <Label className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase"><Package className="h-3.5 w-3.5 text-[#00a3e0]" /> Depósito de Origen</Label>
+                        <select 
+                          className="flex h-11 w-full rounded-xl border border-input bg-white px-3 text-sm focus:ring-2 focus:ring-[#00a3e0] outline-none" 
+                          value={form.depositoId} 
+                          onChange={e => setForm({...form, depositoId: e.target.value})} 
+                          required
+                          disabled={isReadOnly("via_deposito_origen_id")}
+                        >
+                          <option value="">Seleccione Origen...</option>
+                          {depositos.map(d => <option key={d.deposito_id} value={d.deposito_id}>{d.deposito_nombre}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    {!isHidden("via_forma_pago_gastos_id") && (
+                      <div className="space-y-2">
+                        <Label className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase"><CreditCard className="h-3.5 w-3.5 text-[#00a3e0]" /> Forma de Pago Gastos</Label>
+                        <select 
+                          className="flex h-11 w-full rounded-xl border border-input bg-white px-3 text-sm focus:ring-2 focus:ring-[#00a3e0] outline-none" 
+                          value={form.formaPagoId} 
+                          onChange={e => setForm({...form, formaPagoId: e.target.value})} 
+                          required
+                          disabled={isReadOnly("via_forma_pago_gastos_id")}
+                        >
+                          <option value="">Seleccione...</option>
+                          {formasPago.map(f => <option key={f.forma_pago_id} value={f.forma_pago_id}>{f.forma_pago_dsc}</option>)}
+                        </select>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -513,8 +644,20 @@ export default function ViajesPage() {
                 <h4 className="text-sm font-bold text-[#00a3e0] uppercase border-b border-slate-100 pb-2 flex justify-between">
                   <span>Destinos y Trayecto</span>
                   <div className="flex gap-2 p-1 bg-slate-100 rounded-lg">
-                    <button type="button" onClick={() => setForm({...form, tipo: "ZONA", selectedClientes: []})} className={`px-4 py-1.5 text-[9px] font-black rounded-md transition-all ${form.tipo === "ZONA" ? "bg-white text-[#00a3e0] shadow-sm" : "text-slate-400"}`}>POR ZONA</button>
-                    <button type="button" onClick={() => setForm({...form, tipo: "RUTA", selectedZonas: []})} className={`px-4 py-1.5 text-[9px] font-black rounded-md transition-all ${form.tipo === "RUTA" ? "bg-white text-[#00a3e0] shadow-sm" : "text-slate-400"}`}>POR RUTA</button>
+                    <button 
+                      type="button" 
+                      onClick={() => setForm({...form, tipo: "ZONA", selectedClientes: [], puntosCobroDetectados: []})} 
+                      className={`px-4 py-1.5 text-[9px] font-black rounded-md transition-all ${form.tipo === "ZONA" ? "bg-white text-[#00a3e0] shadow-sm" : "text-slate-400"}`}
+                    >
+                      POR ZONA
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => setForm({...form, tipo: "RUTA", selectedZonas: [], puntosCobroDetectados: []})} 
+                      className={`px-4 py-1.5 text-[9px] font-black rounded-md transition-all ${form.tipo === "RUTA" ? "bg-white text-[#00a3e0] shadow-sm" : "text-slate-400"}`}
+                    >
+                      POR RUTA
+                    </button>
                   </div>
                 </h4>
                 
@@ -629,17 +772,17 @@ export default function ViajesPage() {
       <CustomModal isOpen={isViewMapOpen} onClose={() => setIsViewMapOpen(false)} title={`Mapa de Ruta - Viaje #${tripToView?.via_id}`} className="max-w-4xl h-[80vh]">
          <div className="p-1 flex flex-col gap-4 h-full">
             <div className="h-[450px] w-full rounded-2xl overflow-hidden border border-slate-200 relative">
-               {isViewMapOpen && tripToView && (
+                {isViewMapOpen && tripToView && (
                   <TripMap 
                      origin={{ 
-                        lat: tripToView.deposito?.lat || -25.30066, 
-                        lng: tripToView.deposito?.lng || -57.63591, 
-                        name: tripToView.deposito?.deposito_nombre || "Origen" 
+                        lat: tripToView.deposito_origen?.deposito_geo?.lat || -25.30066, 
+                        lng: tripToView.deposito_origen?.deposito_geo?.lng || -57.63591, 
+                        name: tripToView.deposito_origen?.deposito_nombre || "Origen" 
                      }}
-                     destinations={tripToView.zonas?.map((z: any) => ({
-                        lat: z.lat || -25.30,
-                        lng: z.lng || -57.60,
-                        name: z.zon_nombre
+                     destinations={tripToView.destinos?.map((d: any) => ({
+                        lat: d.lat || -25.30,
+                        lng: d.lng || -57.60,
+                        name: d.zon_nombre
                      })) || []}
                   />
                )}

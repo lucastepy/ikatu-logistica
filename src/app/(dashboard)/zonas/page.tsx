@@ -1,5 +1,7 @@
 "use client";
 
+import { useFieldSecurity } from "@/hooks/useFieldSecurity";
+
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,7 +17,8 @@ import {
   CheckCircle2, 
   Save, 
   MapPin,
-  Palette
+  Palette,
+  Loader2
 } from "lucide-react";
 import dynamic from "next/dynamic";
 
@@ -25,8 +28,10 @@ const PolygonMap = dynamic(() => import("@/components/maps/PolygonMap"), {
 });
 
 export default function ZonasPage() {
+  const { isHidden, isReadOnly, loadingRestrictions } = useFieldSecurity("Zona");
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   
@@ -52,7 +57,17 @@ export default function ZonasPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/zonas");
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+
+      const res = await fetch("/api/admin/zonas", {
+        headers: {
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        }
+      });
       const json = await res.json();
       setData(Array.isArray(json) ? json : []);
       setCurrentPage(1);
@@ -82,25 +97,41 @@ export default function ZonasPage() {
     });
     setIsModalOpen(true);
   };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const method = editingItem ? "PUT" : "POST";
     const url = editingItem ? `/api/admin/zonas/${editingItem.zon_id}` : "/api/admin/zonas";
 
-    const res = await fetch(url, {
-      method,
-      body: JSON.stringify(formData),
-      headers: { "Content-Type": "application/json" }
-    });
+    setIsSubmitting(true);
+    try {
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
 
-    if (res.ok) {
-      setIsModalOpen(false);
-      showToast(editingItem ? "Zona actualizada" : "Zona creada");
-      fetchData();
-    } else {
-      const err = await res.json();
-      showToast(err.error || "Error al procesar");
+      const res = await fetch(url, {
+        method,
+        body: JSON.stringify(formData),
+        headers: { 
+          "Content-Type": "application/json",
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        }
+      });
+
+      if (res.ok) {
+        setIsModalOpen(false);
+        showToast(editingItem ? "Zona actualizada" : "Zona creada");
+        fetchData();
+      } else {
+        const err = await res.json();
+        showToast(err.error || "Error al procesar");
+      }
+    } catch (e) {
+      console.error(e);
+      showToast("Error de conexión");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -111,7 +142,18 @@ export default function ZonasPage() {
 
   const onConfirmDelete = async () => {
     if (!itemToDelete) return;
-    const res = await fetch(`/api/admin/zonas/${itemToDelete.zon_id}`, { method: "DELETE" });
+    const userJson = localStorage.getItem("user");
+    const user = userJson ? JSON.parse(userJson) : null;
+    const tenantId = user?.tenantId || "public";
+
+    const res = await fetch(`/api/admin/zonas/${itemToDelete.zon_id}`, { 
+      method: "DELETE",
+      headers: {
+        "x-tenant-id": tenantId,
+        "x-user-email": user?.email || "",
+        "x-user-profile": user?.perfil_cod?.toString() || ""
+      }
+    });
     if (res.ok) {
       setIsConfirmOpen(false);
       showToast("Zona eliminada");
@@ -129,6 +171,10 @@ export default function ZonasPage() {
 
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
   const currentItems = filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  if (loadingRestrictions && loading) {
+    return <div className="h-screen flex items-center justify-center text-slate-400 font-bold uppercase tracking-widest animate-pulse">Sincronizando Seguridad...</div>;
+  }
 
   return (
     <div className="p-8 space-y-6 relative animate-in fade-in duration-500">
@@ -171,9 +217,9 @@ export default function ZonasPage() {
             <table className="w-full text-left">
               <thead>
                 <tr className="bg-slate-50/80 border-b border-slate-100 text-[11px] tracking-tight text-slate-400 font-bold uppercase">
-                  <th className="px-8 py-4 w-24 text-center">ID</th>
-                  <th className="px-8 py-4">Nombre de la Zona</th>
-                  <th className="px-8 py-4 text-center">Color</th>
+                  {!isHidden("zon_id") && <th className="px-8 py-4 w-24 text-center">ID</th>}
+                  {!isHidden("zon_nombre") && <th className="px-8 py-4">Nombre de la Zona</th>}
+                  {!isHidden("zon_color") && <th className="px-8 py-4 text-center">Color</th>}
                   <th className="px-8 py-4 text-right">Acciones</th>
                 </tr>
               </thead>
@@ -184,21 +230,25 @@ export default function ZonasPage() {
                   <tr><td colSpan={4} className="px-8 py-10 text-center text-slate-400 italic">No se encontraron zonas.</td></tr>
                 ) : currentItems.map((item) => (
                   <tr key={item.zon_id} className="hover:bg-slate-50/30 transition-colors group">
-                    <td className="px-8 py-4 font-mono text-[11px] text-accent font-black text-center">#{item.zon_id}</td>
-                    <td className="px-8 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl bg-accent/5 text-accent">
-                          <MapPin className="h-4 w-4" />
+                    {!isHidden("zon_id") && <td className="px-8 py-4 font-mono text-[11px] text-accent font-black text-center">#{item.zon_id}</td>}
+                    {!isHidden("zon_nombre") && (
+                      <td className="px-8 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-xl bg-accent/5 text-accent">
+                            <MapPin className="h-4 w-4" />
+                          </div>
+                          <p className="font-bold text-slate-700 text-sm">{item.zon_nombre}</p>
                         </div>
-                        <p className="font-bold text-slate-700 text-sm">{item.zon_nombre}</p>
-                      </div>
-                    </td>
-                    <td className="px-8 py-4 text-center">
-                       <div className="flex items-center justify-center gap-2">
-                          <div className="w-4 h-4 rounded-full border border-slate-200" style={{ backgroundColor: item.zon_color }}></div>
-                          <span className="text-[10px] font-mono font-bold text-slate-400 uppercase">{item.zon_color}</span>
-                       </div>
-                    </td>
+                      </td>
+                    )}
+                    {!isHidden("zon_color") && (
+                      <td className="px-8 py-4 text-center">
+                         <div className="flex items-center justify-center gap-2">
+                            <div className="w-4 h-4 rounded-full border border-slate-200" style={{ backgroundColor: item.zon_color }}></div>
+                            <span className="text-[10px] font-mono font-bold text-slate-400 uppercase">{item.zon_color}</span>
+                         </div>
+                      </td>
+                    )}
                     <td className="px-8 py-4 text-right">
                       <div className="flex justify-end gap-2">
                          <Button onClick={() => openEdit(item)} variant="outline" size="sm" className="h-8 gap-2 border-slate-200 hover:bg-slate-50 transition-all px-3 font-bold text-xs shadow-sm text-slate-600">
@@ -225,52 +275,70 @@ export default function ZonasPage() {
         </CardContent>
       </Card>
 
-      <CustomModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingItem ? "Editar Zona" : "Nueva Zona"}>
+      <CustomModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        title={editingItem ? "Editar Zona" : "Nueva Zona"}
+        className="max-w-4xl shadow-[0_50px_100px_-20px_rgba(0,0,0,0.3)] border-white/50 backdrop-blur-xl"
+      >
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-          <div className="space-y-2">
-            <Label>Nombre de la Zona</Label>
-            <Input 
-              value={formData.nombre} 
-              onChange={e => setFormData({...formData, nombre: e.target.value})} 
-              placeholder="Ej: Zona Norte, Centro, Sur..." 
-              required 
-              autoFocus 
-            />
-          </div>
-          
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2">Color de Identificación <Palette className="h-3 w-3 text-slate-300" /></Label>
-            <div className="flex gap-3 items-center">
+          {!isHidden("zon_nombre") && (
+            <div className="space-y-2">
+              <Label>Nombre de la Zona</Label>
               <Input 
-                type="color" 
-                value={formData.color} 
-                onChange={e => setFormData({...formData, color: e.target.value})} 
-                className="w-16 h-10 p-1 rounded-lg cursor-pointer"
-              />
-              <Input 
-                value={formData.color} 
-                onChange={e => setFormData({...formData, color: e.target.value})} 
-                className="font-mono uppercase"
-                placeholder="#000000"
+                value={formData.nombre} 
+                onChange={e => setFormData({...formData, nombre: e.target.value})} 
+                placeholder="Ej: Zona Norte, Centro, Sur..." 
+                className="h-12 border-slate-200 text-slate-950 font-medium bg-white shadow-sm"
+                required 
+                autoFocus 
+                disabled={isReadOnly("zon_nombre")}
               />
             </div>
-          </div>
+          )}
+          
+          {!isHidden("zon_color") && (
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">Color de Identificación <Palette className="h-3 w-3 text-slate-300" /></Label>
+              <div className="flex gap-3 items-center">
+                <Input 
+                  type="color" 
+                  value={formData.color} 
+                  onChange={e => setFormData({...formData, color: e.target.value})} 
+                  className="w-16 h-12 p-1 rounded-xl cursor-pointer border-slate-200 shadow-sm"
+                  disabled={isReadOnly("zon_color")}
+                />
+                <Input 
+                  value={formData.color} 
+                  onChange={e => setFormData({...formData, color: e.target.value})} 
+                  className="h-12 font-mono uppercase border-slate-200 text-slate-950 font-medium bg-white shadow-sm"
+                  placeholder="#000000"
+                  disabled={isReadOnly("zon_color")}
+                />
+              </div>
+            </div>
+          )}
 
-          <div className="space-y-2">
-            <Label className="flex justify-between items-center">
-              <span>Perímetro de la Zona (Polígono)</span>
-              <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest bg-slate-100 px-2 py-0.5 rounded">PostGIS WGS84</span>
-            </Label>
-            <PolygonMap 
-              initialGeoJSON={formData.poligono}
-              color={formData.color}
-              onPolygonChange={(geojson) => setFormData({ ...formData, poligono: geojson })}
-            />
-            <p className="text-[10px] text-slate-400 italic">Usa las herramientas de la derecha para dibujar un polígono en el mapa.</p>
-          </div>
+          {!isHidden("zon_poligono") && (
+            <div className="space-y-2">
+              <Label className="flex justify-between items-center">
+                <span>Perímetro de la Zona (Polígono)</span>
+                <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest bg-slate-100 px-2 py-0.5 rounded">PostGIS WGS84</span>
+              </Label>
+              <PolygonMap 
+                initialGeoJSON={formData.poligono}
+                color={formData.color}
+                onPolygonChange={(geojson) => !isReadOnly("zon_poligono") && setFormData({ ...formData, poligono: geojson })}
+              />
+              <p className="text-[10px] text-slate-400 italic">Usa las herramientas de la derecha para dibujar un polígono en el mapa.</p>
+            </div>
+          )}
 
           <div className="flex gap-4 pt-6">
-            <Button type="submit" className="flex-1 bg-accent text-white font-bold h-12 rounded-2xl shadow-lg shadow-accent/20 flex gap-2 uppercase tracking-tighter"><Save className="h-4 w-4" /> Guardar Registro</Button>
+            <Button type="submit" disabled={isSubmitting} className="flex-1 bg-accent text-white font-bold h-12 rounded-2xl shadow-lg shadow-accent/20 flex gap-2 uppercase tracking-tighter transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-70 disabled:scale-100">
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {isSubmitting ? "Guardando..." : "Guardar Registro"}
+            </Button>
             <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1 h-12 rounded-2xl font-bold uppercase tracking-tighter text-slate-500">Cancelar</Button>
           </div>
         </form>

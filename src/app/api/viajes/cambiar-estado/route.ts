@@ -1,51 +1,109 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { getPrisma } from "@/lib/prisma";
+const prisma = getPrisma("tenant_la_transportadora");
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const viaId = searchParams.get("viaId");
+    const usuarioEmail = searchParams.get("usuario") || "";
+    
     if (!viaId) return NextResponse.json([]);
 
+    console.error(`[DEBUG-CambiarEstado] GET: viaId=${viaId}, usuarioEmail=${usuarioEmail}`);
+
+    // 1. Obtener perfil del usuario (en schema public)
+    const usuario: any = (await prisma.$queryRaw`
+      SELECT perfil_cod FROM public.usuarios WHERE LOWER(usuario_email) = LOWER(${usuarioEmail})
+    ` as any[])[0];
+
+    const perfilCod = usuario?.perfil_cod || 0;
+    console.error(`[DEBUG-CambiarEstado] Perfil detectado: ${perfilCod}`);
+
     const viaje: any = (await prisma.$queryRaw`SELECT via_estado FROM viajes WHERE via_id = ${parseInt(viaId)}` as any[])[0];
-    if (!viaje) return NextResponse.json([]);
+    if (!viaje) {
+      console.error(`[DEBUG-CambiarEstado] Viaje ${viaId} no encontrado`);
+      return NextResponse.json([]);
+    }
 
     const estadoActual = (viaje.via_estado || "").toString().trim().toUpperCase();
-    const objeto: any = (await prisma.$queryRaw`SELECT obj_id FROM objetos WHERE obj_nom ILIKE '%viaje%' ORDER BY obj_id ASC LIMIT 1` as any[])[0];
-    if (!objeto) return NextResponse.json([]);
+    
+    // Buscar el objeto que tiene configurado el flujo
+    const objeto: any = (await prisma.$queryRaw`
+      SELECT DISTINCT o.obj_id, o.obj_nom 
+      FROM objetos o
+      JOIN flujo_estados_config fec ON o.obj_id = fec.flu_conf_obj_id
+      WHERE o.obj_nom ILIKE '%viaje%'
+      LIMIT 1
+    ` as any[])[0];
+    
+    if (!objeto) {
+      console.error("[DEBUG-CambiarEstado] No se encontró ningún objeto 'viaje' con flujo configurado");
+      return NextResponse.json([]);
+    }
+    console.error(`[DEBUG-CambiarEstado] Objeto con flujo detectado: ID=${objeto.obj_id}, Nombre=${objeto.obj_nom}`);
+
+    const totalConfig: any[] = await prisma.$queryRaw`SELECT count(*) as total FROM flujo_estados_config WHERE flu_conf_obj_id = ${objeto.obj_id}`;
+    console.error(`[DEBUG-CambiarEstado] Total transiciones en DB para este objeto: ${totalConfig[0]?.total}`);
+
+    // Volcar los perfiles que tienen ALGO configurado para este objeto
+    const perfilesConfig: any[] = await prisma.$queryRaw`SELECT DISTINCT flu_conf_perfil_cod FROM flujo_estados_config WHERE flu_conf_obj_id = ${objeto.obj_id}`;
+    
+    // Obtener nombres de perfiles involucrados
+    const idsParaNombre = Array.from(new Set([perfilCod, ...perfilesConfig.map(p => p.flu_conf_perfil_cod)]));
+    const nombresPerfiles: any[] = await prisma.$queryRaw`SELECT perfil_cod, perfil_nombre FROM public.perfiles WHERE perfil_cod = ANY(${idsParaNombre})`;
+    const nombreMap = Object.fromEntries(nombresPerfiles.map(p => [p.perfil_cod, p.perfil_nombre]));
+
+    console.error(`[DEBUG-CambiarEstado] Buscando todas las transiciones posibles para Objeto=${objeto.obj_id}, Estado='${estadoActual}'`);
 
     let transiciones: any[] = await prisma.$queryRaw`
       SELECT 
         fec.flu_conf_id as id,
         fec.flu_conf_etiqueta_accion as accion,
         fe.flu_est_id as "estadoSiguienteId",
-        fe.flu_est_nom as "estadoSiguienteNom"
+        fe.flu_est_nom as "estadoSiguienteNom",
+        fec.flu_conf_perfil_cod as "perfilAutorizadoId",
+        p.perfil_nombre as "perfilAutorizadoNom",
+        CASE WHEN fec.flu_conf_perfil_cod = ${perfilCod} THEN true ELSE false END as "canExecute"
       FROM flujo_estados_config fec
       JOIN flujo_estados fe ON fec.flu_conf_id_estado_siguiente = fe.flu_est_id
       LEFT JOIN flujo_estados fe_act ON fec.flu_conf_id_estado_actual = fe_act.flu_est_id
+      LEFT JOIN public.perfiles p ON fec.flu_conf_perfil_cod = p.perfil_cod
       WHERE fec.flu_conf_obj_id = ${objeto.obj_id}
         AND (
           CAST(fec.flu_conf_id_estado_actual AS TEXT) = ${estadoActual}
           OR UPPER(TRIM(fe_act.flu_est_nom)) = ${estadoActual}
         )
+      ORDER BY "canExecute" DESC, accion ASC
     `;
 
-    if (transiciones.length === 0 && (estadoActual === "" || estadoActual === "0" || estadoActual === "1")) {
-       transiciones = await prisma.$queryRaw`
-        SELECT 
-          fec.flu_conf_id as id,
-          fec.flu_conf_etiqueta_accion as accion,
-          fe.flu_est_id as "estadoSiguienteId"
-        FROM flujo_estados_config fec
-        JOIN flujo_estados fe ON fec.flu_conf_id_estado_siguiente = fe.flu_est_id
-        WHERE fec.flu_conf_obj_id = ${objeto.obj_id}
-          AND fec.flu_conf_es_estado_inicial = true
-      `;
-    }
+    // Agrupar por acción para no repetir botones si varios perfiles pueden hacer lo mismo, 
+    // pero priorizando el que el usuario SÍ puede ejecutar.
+    const uniqueActions = transiciones.reduce((acc: any[], curr) => {
+      const existing = acc.find(a => a.accion === curr.accion && a.estadoSiguienteId === curr.estadoSiguienteId);
+      if (!existing) {
+        acc.push(curr);
+      } else if (curr.canExecute) {
+        existing.canExecute = true;
+      }
+      return acc;
+    }, []);
+    
+    // Serialización segura para BigInt
+    const serialize = (obj: any) => {
+      return JSON.parse(JSON.stringify(obj, (key, value) =>
+        typeof value === 'bigint' ? value.toString() : value
+      ));
+    };
 
-    return NextResponse.json(transiciones);
-  } catch (error) {
-    return NextResponse.json([]);
+    return NextResponse.json(serialize(uniqueActions));
+  } catch (error: any) {
+    console.error("[CambiarEstado] CRITICAL ERROR:", error);
+    return NextResponse.json({ 
+      error: error.message, 
+      stack: error.stack,
+      hint: "Check server logs for details"
+    }, { status: 500 });
   }
 }
 
@@ -78,7 +136,7 @@ export async function POST(request: Request) {
     // 4. Preparar el punto geográfico si vienen coordenadas
     let geoQuery = `NULL`;
     if (lat && lng) {
-      geoQuery = `ST_SetSRID(ST_Point(${lng}, ${lat}), 4326)`;
+      geoQuery = `public.ST_SetSRID(public.ST_Point(${lng}, ${lat}), 4326)`;
     }
 
     // 5. Transacción para actualizar e insertar trazabilidad con GEO

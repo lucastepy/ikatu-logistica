@@ -10,7 +10,7 @@ import { ConfirmModal } from "@/components/ui/modal-confirm";
 import { 
   Plus, Edit3, Trash2, CheckCircle2, Save, Search, 
   Activity, Boxes, GitBranch, Shield, Layout, Palette, Tag, Check, X,
-  ArrowRightCircle, Settings2, Sparkles, Fingerprint, Users, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Hexagon
+  ArrowRightCircle, Settings2, Sparkles, Fingerprint, Users, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Hexagon, Loader2
 } from "lucide-react";
 import { getLoggedUserEmail } from "@/lib/auth-utils";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 export default function WorkflowPage() {
   const [activeTab, setActiveTab] = useState<"objetos" | "estados" | "config">("objetos");
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   
   const [estados, setEstados] = useState<any[]>([]);
@@ -100,38 +101,44 @@ export default function WorkflowPage() {
     }
     setIsModalOpen(true);
   };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const usuario = getLoggedUserEmail();
     let url = "";
     let method = editingItem ? "PUT" : "POST";
-    let body: any = {};
+    let body = {};
 
     if (activeTab === "estados") {
       url = editingItem ? `/api/flujo-estados/${editingItem.flu_est_id}` : "/api/flujo-estados";
-      body = { ...estadoForm, usuario };
+      body = estadoForm;
     } else if (activeTab === "objetos") {
       url = editingItem ? `/api/objetos/${editingItem.obj_id}` : "/api/objetos";
-      body = { ...objetoForm, usuario };
-    } else if (activeTab === "config") {
+      body = objetoForm;
+    } else {
       url = editingItem ? `/api/workflow/${editingItem.flu_conf_id}` : "/api/workflow";
-      body = { ...configForm, usuario };
+      body = configForm;
     }
 
-    const res = await fetch(url, {
-      method,
-      body: JSON.stringify(body),
-      headers: { "Content-Type": "application/json" }
-    });
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(url, {
+        method,
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" }
+      });
 
-    if (res.ok) {
-      setIsModalOpen(false);
-      showToast(editingItem ? "Registro actualizado" : "Registro creado");
-      fetchData();
-    } else {
-      const err = await res.json();
-      alert(err.error || "Ocurrió un error");
+      if (res.ok) {
+        setIsModalOpen(false);
+        showToast(editingItem ? "Registro actualizado" : "Registro creado");
+        fetchData();
+      } else {
+        const err = await res.json();
+        alert(err.error || "Ocurrió un error");
+      }
+    } catch (e) {
+      console.error(e);
+      showToast("Error de conexión");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -459,8 +466,9 @@ export default function WorkflowPage() {
 
           <div className="flex gap-3 justify-end pt-4 border-t border-slate-100">
             <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="h-12 px-8 rounded-xl font-bold border-slate-200 hover:bg-slate-50">Cancelar</Button>
-            <Button type="submit" className="h-12 px-8 rounded-xl font-bold bg-[#00a3e0] hover:brightness-105 text-white shadow-lg shadow-[#00a3e0]/20 flex gap-2">
-              <Save className="h-4 w-4" /> Guardar Registro
+            <Button type="submit" disabled={isSubmitting} className="h-12 px-8 rounded-xl font-bold bg-[#00a3e0] hover:brightness-105 text-white shadow-lg shadow-[#00a3e0]/20 flex gap-2 transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-70 disabled:scale-100">
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {isSubmitting ? "Procesando..." : "Guardar Registro"}
             </Button>
           </div>
         </form>

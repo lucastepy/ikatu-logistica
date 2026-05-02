@@ -1,5 +1,7 @@
 "use client";
 
+import { useFieldSecurity } from "@/hooks/useFieldSecurity";
+
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,6 +25,7 @@ const PointMap = dynamic(() => import("../../../components/maps/PointMap"), {
 }) as any;
 
 export default function ClientesPage() {
+  const { isHidden, isReadOnly, loadingRestrictions } = useFieldSecurity("Cliente");
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
@@ -114,7 +117,17 @@ export default function ClientesPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/clientes");
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+
+      const res = await fetch("/api/clientes", {
+        headers: {
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        }
+      });
       const json = await res.json();
       setData(Array.isArray(json) ? json : []);
     } catch (e) { console.error(e); }
@@ -123,23 +136,44 @@ export default function ClientesPage() {
 
   const fetchAuxGeog = async () => {
     try {
-      const rDep = await fetch("/api/admin/config-locations?type=dep");
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+      const headers = {
+        "x-tenant-id": tenantId,
+        "x-user-email": user?.email || "",
+        "x-user-profile": user?.perfil_cod?.toString() || ""
+      };
+
+      const [rDep, rDis, rCiu, rBar, rZon] = await Promise.all([
+        fetch("/api/admin/config-locations?type=dep", { headers }),
+        fetch("/api/admin/config-locations?type=dis", { headers }),
+        fetch("/api/admin/config-locations?type=ciu", { headers }),
+        fetch("/api/admin/config-locations?type=bar", { headers }),
+        fetch("/api/admin/config-locations?type=zon", { headers })
+      ]);
+
       setDeps(await rDep.json());
-      const rDis = await fetch("/api/admin/config-locations?type=dis");
       setDistritos(await rDis.json());
-      const rCiu = await fetch("/api/admin/config-locations?type=ciu");
       setCiudades(await rCiu.json());
-      const rBar = await fetch("/api/admin/config-locations?type=bar");
       setBarrios(await rBar.json());
-      const rZon = await fetch("/api/admin/config-locations?type=zon");
       setZonas(await rZon.json());
     } catch (e) { console.error(e); }
   };
 
   useEffect(() => {
+    const userJson = localStorage.getItem("user");
+    const user = userJson ? JSON.parse(userJson) : null;
+    const tenantId = user?.tenantId || "public";
+    const headers = {
+      "x-tenant-id": tenantId,
+      "x-user-email": user?.email || "",
+      "x-user-profile": user?.perfil_cod?.toString() || ""
+    };
+
     fetchData();
     fetchAuxGeog();
-    fetch("/api/tipo-documentos").then(r => r.json()).then(j => setTipoDocs(j));
+    fetch("/api/tipo-documentos", { headers }).then(r => r.json()).then(j => setTipoDocs(j));
   }, []);
 
   const openCreate = () => {
@@ -165,10 +199,23 @@ export default function ClientesPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const userJson = localStorage.getItem("user");
+    const user = userJson ? JSON.parse(userJson) : null;
+    const tenantId = user?.tenantId || "public";
+
     const method = editingItem ? "PUT" : "POST";
     const url = editingItem ? `/api/clientes/${editingItem.cli_id}` : "/api/clientes";
     const finalData = { ...formData, nroDoc: formData.esContribuyente ? `${formData.nroDoc}-${rucDV}` : formData.nroDoc };
-    const res = await fetch(url, { method, body: JSON.stringify(finalData), headers: { "Content-Type": "application/json" } });
+    const res = await fetch(url, { 
+      method, 
+      body: JSON.stringify(finalData), 
+      headers: { 
+        "Content-Type": "application/json",
+        "x-tenant-id": tenantId,
+        "x-user-email": user?.email || "",
+        "x-user-profile": user?.perfil_cod?.toString() || ""
+      } 
+    });
     if (res.ok) { setIsModalOpen(false); showToast(editingItem ? "Cliente actualizado" : "Cliente registrado"); fetchData(); }
   };
 
@@ -180,7 +227,17 @@ export default function ClientesPage() {
 
   const fetchDirecciones = async (cliId: string) => {
     try {
-      const res = await fetch(`/api/clientes/${cliId}/direcciones`);
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+
+      const res = await fetch(`/api/clientes/${cliId}/direcciones`, {
+        headers: {
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        }
+      });
       const json = await res.json();
       setDirecciones(Array.isArray(json) ? json : []);
     } catch (e) {
@@ -263,7 +320,20 @@ export default function ClientesPage() {
       fotoDsc: addressData.fotoDsc
     };
 
-    const res = await fetch(url, { method, body: JSON.stringify(payload), headers: { "Content-Type": "application/json" } });
+    const userJson = localStorage.getItem("user");
+    const user = userJson ? JSON.parse(userJson) : null;
+    const tenantId = user?.tenantId || "public";
+
+    const res = await fetch(url, { 
+      method, 
+      body: JSON.stringify(payload), 
+      headers: { 
+        "Content-Type": "application/json",
+        "x-tenant-id": tenantId,
+        "x-user-email": user?.email || "",
+        "x-user-profile": user?.perfil_cod?.toString() || ""
+      } 
+    });
     if (res.ok) {
       setIsAddressFormOpen(false);
       showToast(editingAddress ? "Dirección actualizada" : "Dirección agregada");
@@ -283,6 +353,10 @@ export default function ClientesPage() {
 
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
   const currentItems = filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  if (loadingRestrictions && loading) {
+    return <div className="h-screen flex items-center justify-center text-slate-400 font-bold uppercase tracking-widest animate-pulse">Sincronizando Seguridad...</div>;
+  }
 
   return (
     <div className="p-8 space-y-6 relative">
@@ -324,9 +398,9 @@ export default function ClientesPage() {
             <table className="w-full text-left">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-[11px] tracking-tight text-slate-400 font-bold uppercase">
-                  <th className="px-8 py-4">Razón Social</th>
-                  <th className="px-8 py-4">Documento</th>
-                  <th className="px-8 py-4">Contacto</th>
+                  {!isHidden("cli_razon_social") && <th className="px-8 py-4">Razón Social</th>}
+                  {!isHidden("cli_nro_doc") && <th className="px-8 py-4">Documento</th>}
+                  {(!isHidden("cli_telefono") || !isHidden("cli_email")) && <th className="px-8 py-4">Contacto</th>}
                   <th className="px-8 py-4 text-center">Ubicaciones</th>
                   <th className="px-8 py-4 text-right">Acciones</th>
                 </tr>
@@ -338,23 +412,29 @@ export default function ClientesPage() {
                   <tr><td colSpan={10} className="px-8 py-10 text-center text-slate-400 italic">No se encontraron clientes.</td></tr>
                 ) : currentItems.map((item) => (
                   <tr key={item.cli_id} className="hover:bg-slate-50/30 transition-colors">
-                    <td className="px-8 py-4">
-                       <div className="flex flex-col text-[14px]">
-                         <span className="font-bold text-slate-700">{item.cli_razon_social}</span>
-                         {item.cli_es_contribuyente && <span className="text-[10px] text-emerald-600 font-bold uppercase flex items-center gap-1"><ShieldCheck className="h-3 w-3" /> Contribuyente</span>}
-                       </div>
-                    </td>
-                    <td className="px-8 py-4 font-mono text-[12px] text-slate-500">
-                      <Badge variant="outline" className="bg-slate-100 border-none font-bold text-slate-600">
-                        {item.cli_tip_doc_id}: {item.cli_nro_doc}
-                      </Badge>
-                    </td>
-                    <td className="px-8 py-4 text-[12px] text-slate-400">
-                       <div className="flex flex-col gap-1">
-                         <div className="flex items-center gap-2"><Phone className="h-3 w-3" /> {item.cli_telefono || '---'}</div>
-                         <div className="flex items-center gap-2"><Mail className="h-3 w-3" /> {item.cli_email || '---'}</div>
-                       </div>
-                    </td>
+                    {!isHidden("cli_razon_social") && (
+                      <td className="px-8 py-4">
+                         <div className="flex flex-col text-[14px]">
+                           <span className="font-bold text-slate-700">{item.cli_razon_social}</span>
+                           {!isHidden("cli_es_contribuyente") && item.cli_es_contribuyente && <span className="text-[10px] text-emerald-600 font-bold uppercase flex items-center gap-1"><ShieldCheck className="h-3 w-3" /> Contribuyente</span>}
+                         </div>
+                      </td>
+                    )}
+                    {!isHidden("cli_nro_doc") && (
+                      <td className="px-8 py-4 font-mono text-[12px] text-slate-500">
+                        <Badge variant="outline" className="bg-slate-100 border-none font-bold text-slate-600">
+                          {item.cli_tip_doc_id}: {item.cli_nro_doc}
+                        </Badge>
+                      </td>
+                    )}
+                    {(!isHidden("cli_telefono") || !isHidden("cli_email")) && (
+                      <td className="px-8 py-4 text-[12px] text-slate-400">
+                         <div className="flex flex-col gap-1">
+                           {!isHidden("cli_telefono") && <div className="flex items-center gap-2"><Phone className="h-3 w-3" /> {item.cli_telefono || '---'}</div>}
+                           {!isHidden("cli_email") && <div className="flex items-center gap-2"><Mail className="h-3 w-3" /> {item.cli_email || '---'}</div>}
+                         </div>
+                      </td>
+                    )}
                     <td className="px-8 py-4 text-center">
                        <Button onClick={() => openDirecciones(item)} variant="outline" size="sm" className="h-9 px-4 gap-2 border-accent/20 text-accent hover:bg-accent/5 font-bold rounded-xl transition-all">
                          <MapPin className="h-4 w-4" /> <span className="text-[11px] uppercase tracking-wider">Direcciones</span>
@@ -399,40 +479,109 @@ export default function ClientesPage() {
       </Card>
 
       {/* MODAL CLIENTE */}
-      <CustomModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={`${editingItem ? 'Editar' : 'Nuevo'} Cliente`}>
+      <CustomModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        title={`${editingItem ? 'Editar' : 'Nuevo'} Cliente`}
+        className="max-w-md shadow-[0_50px_100px_-20px_rgba(0,0,0,0.3)] border-white/50 backdrop-blur-xl"
+      >
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-          <div className="flex items-center space-x-2 bg-slate-50 p-4 rounded-xl border border-slate-100 mb-2">
-            <input type="checkbox" id="esContribuyente" className="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent accent-accent cursor-pointer" checked={formData.esContribuyente} onChange={(e) => setFormData({...formData, esContribuyente: e.target.checked})} />
-            <div className="grid gap-1.5 leading-none">
-              <label htmlFor="esContribuyente" className="text-sm font-bold leading-none cursor-pointer text-slate-700">¿Es Contribuyente?</label>
-              <p className="text-xs text-slate-400 font-medium italic">Al marcar, el tipo de documento se fijará en RUC automáticamente.</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2 relative">
-              <Label>Tipo Documento</Label>
-              <div className="relative">
-                <select className={`flex h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-accent outline-none ${formData.esContribuyente ? "opacity-60 bg-slate-50 cursor-not-allowed" : ""}`} value={formData.tipDocId} onChange={e => setFormData({...formData, tipDocId: e.target.value})} required disabled={formData.esContribuyente}>
-                  <option value="">Seleccione...</option>{tipoDocs.map(t => <option key={t.tip_doc_id} value={t.tip_doc_id}>{t.tip_doc_dsc}</option>)}
-                </select>
-                {formData.esContribuyente && <Lock className="absolute right-3 top-2.5 h-4 w-4 text-slate-400" />}
+          {!isHidden("cli_es_contribuyente") && (
+            <div className="flex items-center space-x-2 bg-slate-50 p-4 rounded-xl border border-slate-100 mb-2">
+              <input 
+                type="checkbox" 
+                id="esContribuyente" 
+                className="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent accent-accent cursor-pointer" 
+                checked={formData.esContribuyente} 
+                onChange={(e) => setFormData({...formData, esContribuyente: e.target.checked})} 
+                disabled={isReadOnly("cli_es_contribuyente")}
+              />
+              <div className="grid gap-1.5 leading-none">
+                <label htmlFor="esContribuyente" className="text-sm font-bold leading-none cursor-pointer text-slate-700">¿Es Contribuyente?</label>
+                <p className="text-xs text-slate-400 font-medium italic">Al marcar, el tipo de documento se fijará en RUC automáticamente.</p>
               </div>
             </div>
-            <div className="space-y-2"><Label>Nro. Documento</Label><Input value={formData.nroDoc} onChange={e => setFormData({...formData, nroDoc: e.target.value})} placeholder="Ej: 1234567" required /></div>
+          )}
+          <div className="grid grid-cols-2 gap-4">
+            {!isHidden("cli_tip_doc_id") && (
+              <div className="space-y-2 relative">
+                <Label className="text-slate-700 font-bold">Tipo Documento</Label>
+                <div className="relative">
+                  <select 
+                    className={`flex h-12 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-950 font-medium focus:ring-2 focus:ring-accent outline-none shadow-sm ${(formData.esContribuyente || isReadOnly("cli_tip_doc_id")) ? "opacity-60 bg-slate-50 cursor-not-allowed" : ""}`} 
+                    value={formData.tipDocId} 
+                    onChange={e => setFormData({...formData, tipDocId: e.target.value})} 
+                    required 
+                    disabled={formData.esContribuyente || isReadOnly("cli_tip_doc_id")}
+                  >
+                    <option value="">Seleccione...</option>{tipoDocs.map(t => <option key={t.tip_doc_id} value={t.tip_doc_id}>{t.tip_doc_dsc}</option>)}
+                  </select>
+                  {(formData.esContribuyente || isReadOnly("cli_tip_doc_id")) && <Lock className="absolute right-3 top-2.5 h-4 w-4 text-slate-400" />}
+                </div>
+              </div>
+            )}
+            {!isHidden("cli_nro_doc") && (
+              <div className="space-y-2">
+                <Label className="text-slate-700 font-bold">Nro. Documento</Label>
+                <Input 
+                  value={formData.nroDoc} 
+                  onChange={e => setFormData({...formData, nroDoc: e.target.value})} 
+                  placeholder="Ej: 1234567" 
+                  required 
+                  className="h-12 border-slate-200 text-slate-950 font-medium bg-white shadow-sm" 
+                  disabled={isReadOnly("cli_nro_doc")}
+                />
+              </div>
+            )}
           </div>
-          {formData.esContribuyente && (
+          {!isHidden("cli_es_contribuyente") && formData.esContribuyente && (
             <div className="space-y-2 animate-in slide-in-from-top-2 duration-200">
               <Label className="text-accent font-bold">RUC Resultante (Base + DV)</Label>
               <div className="flex gap-2">
-                <div className="flex-1 h-10 bg-slate-50 border border-slate-200 rounded-xl flex items-center px-4 font-mono text-sm text-slate-600 shadow-inner">{formData.nroDoc || "---"}</div>
+                <div className="flex-1 h-10 bg-slate-50 border border-slate-200 rounded-xl flex items-center px-4 font-mono text-sm text-slate-900 shadow-inner">{formData.nroDoc || "---"}</div>
                 <div className="w-12 h-10 bg-accent text-white border border-accent rounded-xl flex items-center justify-center font-bold shadow-lg">-{rucDV || '0'}</div>
               </div>
             </div>
           )}
-          <div className="space-y-2"><Label>Razón Social / Nombre Completo</Label><Input value={formData.razonSocial} onChange={e => setFormData({...formData, razonSocial: e.target.value})} placeholder="Ingrese el nombre..." required /></div>
+          {!isHidden("cli_razon_social") && (
+            <div className="space-y-2">
+              <Label className="text-slate-700 font-bold">Razón Social / Nombre Completo</Label>
+              <Input 
+                value={formData.razonSocial} 
+                onChange={e => setFormData({...formData, razonSocial: e.target.value})} 
+                placeholder="Ingrese el nombre..." 
+                required 
+                className="h-12 border-slate-200 text-slate-950 font-medium bg-white shadow-sm" 
+                disabled={isReadOnly("cli_razon_social")}
+              />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2"><Label>Teléfono</Label><Input value={formData.telefono} onChange={e => setFormData({...formData, telefono: e.target.value})} placeholder="+595 ..." /></div>
-            <div className="space-y-2"><Label>Correo</Label><Input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} placeholder="ejemplo@mail.com" /></div>
+            {!isHidden("cli_telefono") && (
+              <div className="space-y-2">
+                <Label className="text-slate-700 font-bold">Teléfono</Label>
+                <Input 
+                  value={formData.telefono} 
+                  onChange={e => setFormData({...formData, telefono: e.target.value})} 
+                  placeholder="+595 ..." 
+                  className="h-12 border-slate-200 text-slate-950 font-medium bg-white shadow-sm" 
+                  disabled={isReadOnly("cli_telefono")}
+                />
+              </div>
+            )}
+            {!isHidden("cli_email") && (
+              <div className="space-y-2">
+                <Label className="text-slate-700 font-bold">Correo</Label>
+                <Input 
+                  type="email" 
+                  value={formData.email} 
+                  onChange={e => setFormData({...formData, email: e.target.value})} 
+                  placeholder="ejemplo@mail.com" 
+                  className="h-12 border-slate-200 text-slate-950 font-medium bg-white shadow-sm" 
+                  disabled={isReadOnly("cli_email")}
+                />
+              </div>
+            )}
           </div>
           <div className="flex gap-3 pt-6">
             <Button type="submit" className="flex-1 bg-accent text-white font-bold h-12 rounded-2xl shadow-lg flex gap-2 uppercase tracking-tighter"><Save className="h-4 w-4" /> Guardar</Button>
@@ -446,7 +595,7 @@ export default function ClientesPage() {
         isOpen={isDirModalOpen} 
         onClose={() => setIsDirModalOpen(false)} 
         title={`Direcciones de Entrega: ${selectedCliente?.cli_razon_social}`}
-        className="max-w-6xl"
+        className="max-w-6xl shadow-[0_50px_100px_-20px_rgba(0,0,0,0.3)] border-white/50 backdrop-blur-xl"
       >
         <div className="space-y-6 pt-2 max-w-6xl mx-auto">
           {!isAddressFormOpen ? (
@@ -488,7 +637,7 @@ export default function ClientesPage() {
                           <p className="text-[11px] text-slate-400 flex items-center gap-1"><Navigation className="h-3 w-3" /> {dir.lat}, {dir.lng}</p>
                           {dir.zon_id && (
                             <Badge className="bg-accent/5 text-accent border-accent/10 font-bold text-[9px] uppercase tracking-widest">
-                              Zona: {zonas.find(z => z.zon_id === dir.zon_id)?.zon_nombre}
+                               Zona: {zonas.find(z => z.zon_id === dir.zon_id)?.zon_nombre}
                             </Badge>
                           )}
                        </div>
@@ -521,47 +670,47 @@ export default function ClientesPage() {
                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label>Departamento / Ciudad / Barrio</Label>
+                      <Label className="text-slate-700 font-bold">Departamento / Ciudad / Barrio</Label>
                       <div className="grid grid-cols-2 gap-2">
-                         <select className="flex h-10 w-full rounded-xl border border-input bg-white px-3 text-xs" value={addressData.barDepCod} onChange={e => setAddressData({...addressData, barDepCod: e.target.value})}>
+                         <select className="flex h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-950 font-medium focus:ring-2 focus:ring-accent outline-none shadow-sm" value={addressData.barDepCod} onChange={e => setAddressData({...addressData, barDepCod: e.target.value})}>
                            <option value="">DEPARTAMENTO</option>
                            {deps.map(d => <option key={d.dep_cod} value={d.dep_cod}>{d.dep_dsc}</option>)}
                          </select>
-                         <select className="flex h-10 w-full rounded-xl border border-input bg-white px-3 text-xs" value={addressData.barDisCod} onChange={e => setAddressData({...addressData, barDisCod: e.target.value})} disabled={!addressData.barDepCod}>
+                         <select className="flex h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-950 font-medium focus:ring-2 focus:ring-accent outline-none shadow-sm" value={addressData.barDisCod} onChange={e => setAddressData({...addressData, barDisCod: e.target.value})} disabled={!addressData.barDepCod}>
                            <option value="">DISTRITO</option>
                            {distritos.filter(d => d.dis_dep_cod === parseInt(addressData.barDepCod)).map(d => <option key={d.dis_cod} value={d.dis_cod}>{d.dis_dsc}</option>)}
                          </select>
                       </div>
                       <div className="grid grid-cols-2 gap-2 mt-2">
-                         <select className="flex h-10 w-full rounded-xl border border-input bg-white px-3 text-xs" value={addressData.barCiuCod} onChange={e => setAddressData({...addressData, barCiuCod: e.target.value})} disabled={!addressData.barDisCod}>
+                         <select className="flex h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-950 font-medium focus:ring-2 focus:ring-accent outline-none shadow-sm" value={addressData.barCiuCod} onChange={e => setAddressData({...addressData, barCiuCod: e.target.value})} disabled={!addressData.barDisCod}>
                            <option value="">CIUDAD</option>
                            {ciudades.filter(c => c.ciu_dep_cod === parseInt(addressData.barDepCod) && c.ciu_dis_cod === parseInt(addressData.barDisCod)).map(c => <option key={c.ciu_cod} value={c.ciu_cod}>{c.ciu_dsc}</option>)}
                          </select>
-                         <select className="flex h-10 w-full rounded-xl border border-input bg-white px-3 text-xs" value={addressData.barCod} onChange={e => setAddressData({...addressData, barCod: e.target.value})} disabled={!addressData.barCiuCod} required>
+                         <select className="flex h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-950 font-medium focus:ring-2 focus:ring-accent outline-none shadow-sm" value={addressData.barCod} onChange={e => setAddressData({...addressData, barCod: e.target.value})} disabled={!addressData.barCiuCod} required>
                            <option value="">BARRIO</option>
                            {barrios.filter(b => b.bar_dep_cod === parseInt(addressData.barDepCod) && b.bar_dis_cod === parseInt(addressData.barDisCod) && b.bar_ciu_cod === parseInt(addressData.barCiuCod)).map(b => <option key={b.bar_cod} value={b.bar_cod}>{b.bar_dsc}</option>)}
                          </select>
                       </div>
                     </div>
                     <div className="space-y-2">
-                       <Label>Zona Logística (Opcional)</Label>
-                       <select className="flex h-10 w-full rounded-xl border border-input bg-white px-3 text-sm" value={addressData.zonId} onChange={e => setAddressData({...addressData, zonId: e.target.value})}>
+                       <Label className="text-slate-700 font-bold">Zona Logística (Opcional)</Label>
+                       <select className="flex h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-950 font-medium focus:ring-2 focus:ring-accent outline-none shadow-sm" value={addressData.zonId} onChange={e => setAddressData({...addressData, zonId: e.target.value})}>
                           <option value="">Ninguna</option>
                           {zonas.map(z => <option key={z.zon_id} value={z.zon_id}>{z.zon_nombre}</option>)}
                        </select>
                     </div>
                     <div className="space-y-2">
-                       <Label>Calle Principal y Nro. Casa</Label>
+                       <Label className="text-slate-700 font-bold">Calle Principal y Nro. Casa</Label>
                        <div className="flex gap-2">
-                          <Input className="flex-[3]" value={addressData.calle} onChange={e => setAddressData({...addressData, calle: e.target.value})} placeholder="Ej: Avda. España" required />
-                          <Input className="flex-1" value={addressData.nroCasa} onChange={e => setAddressData({...addressData, nroCasa: e.target.value})} placeholder="Nº 123" />
+                          <Input className="h-12 flex-[3] border-slate-200 text-slate-950 font-medium bg-white shadow-sm" value={addressData.calle} onChange={e => setAddressData({...addressData, calle: e.target.value})} placeholder="Ej: Avda. España" required />
+                          <Input className="h-12 flex-1 border-slate-200 text-slate-950 font-medium bg-white shadow-sm" value={addressData.nroCasa} onChange={e => setAddressData({...addressData, nroCasa: e.target.value})} placeholder="Nº 123" />
                        </div>
                     </div>
                   </div>
 
                   <div className="space-y-4">
                     <div className="space-y-2">
-                       <Label className="flex justify-between items-center">
+                       <Label className="flex justify-between items-center text-slate-700 font-bold">
                          <span>Geolocalización (Punto en Mapa)</span>
                          <Badge variant="outline" className="text-[9px] font-mono">{addressData.lat.toFixed(4)}, {addressData.lng.toFixed(4)}</Badge>
                        </Label>
@@ -575,11 +724,11 @@ export default function ClientesPage() {
                </div>
                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Referencia para el repartidor</Label>
-                    <Input value={addressData.referencia} onChange={e => setAddressData({...addressData, referencia: e.target.value})} placeholder="Ej: Portón verde..." />
+                    <Label className="text-slate-700 font-bold">Referencia para el repartidor</Label>
+                    <Input value={addressData.referencia} onChange={e => setAddressData({...addressData, referencia: e.target.value})} placeholder="Ej: Portón verde..." className="h-12 border-slate-200 text-slate-950 font-medium bg-white shadow-sm" />
                   </div>
                   <div className="space-y-2">
-                    <Label>Foto de Fachada (Adjuntar archivo)</Label>
+                    <Label className="text-slate-700 font-bold">Foto de Fachada (Adjuntar archivo)</Label>
                     <div className="flex gap-3">
                        <input 
                          type="file" 
@@ -654,7 +803,7 @@ export default function ClientesPage() {
                        )}
                        
                        <Input 
-                         className="flex-1 h-11" 
+                         className="flex-1 h-11 border-slate-200 text-slate-950 font-medium bg-white shadow-sm" 
                          value={addressData.fotoDsc} 
                          onChange={e => setAddressData({...addressData, fotoDsc: e.target.value})} 
                          placeholder="Ej: Portón azul..." 
@@ -672,9 +821,20 @@ export default function ClientesPage() {
       </CustomModal>
 
       <ConfirmModal isOpen={isConfirmOpen} onClose={() => setIsConfirmOpen(false)} onConfirm={async () => {
-        if (!itemToDelete) return;
-        const res = await fetch(`/api/clientes/${itemToDelete.cli_id}`, { method: "DELETE" });
-        if (res.ok) { setIsConfirmOpen(false); showToast("Cliente desactivado"); fetchData(); }
+      if (!itemToDelete) return;
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+
+      const res = await fetch(`/api/clientes/${itemToDelete.cli_id}`, { 
+        method: "DELETE",
+        headers: {
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        }
+      });
+      if (res.ok) { setIsConfirmOpen(false); showToast("Cliente desactivado"); fetchData(); }
       }} title="¿Desactivar Cliente?" description="El cliente pasará a estado INACTIVO." />
 
       <ConfirmModal isOpen={isAddrConfirmOpen} onClose={() => setIsAddrConfirmOpen(false)} onConfirm={async () => {

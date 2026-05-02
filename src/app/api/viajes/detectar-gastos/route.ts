@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { getPrisma } from "@/lib/prisma";
+const prisma = getPrisma("tenant_la_transportadora");
 import { Prisma } from "@prisma/client";
 
 export async function POST(request: Request) {
@@ -12,16 +13,16 @@ export async function POST(request: Request) {
 
     // 1. Obtener coordenadas de origen y destino
     const origin: any = await prisma.$queryRaw`
-      SELECT ST_X(deposito_geo::geometry) as lng, ST_Y(deposito_geo::geometry) as lat 
+      SELECT public.ST_X(deposito_geo::public.geometry) as lng, public.ST_Y(deposito_geo::public.geometry) as lat 
       FROM depositos WHERE deposito_id = ${parseInt(depositoId)}
     `;
 
     const dest: any = await prisma.$queryRaw`
-      SELECT ST_X(ST_Centroid(ST_Collect(geom))) as lng, ST_Y(ST_Centroid(ST_Collect(geom))) as lat
+      SELECT public.ST_X(public.ST_Centroid(public.ST_Collect(geom))) as lng, public.ST_Y(public.ST_Centroid(public.ST_Collect(geom))) as lat
       FROM (
         ${tipo === 'ZONA' 
-          ? Prisma.sql`SELECT zon_poligono::geometry as geom FROM zonas WHERE zon_id IN (${Prisma.join(validIds.map((id: any) => parseInt(id)))})`
-          : Prisma.sql`SELECT dir_geolocalizacion::geometry as geom FROM clientes_direcciones WHERE cli_id IN (${Prisma.join(validIds)})`}
+          ? Prisma.sql`SELECT zon_poligono::public.geometry as geom FROM zonas WHERE zon_id IN (${Prisma.join(validIds.map((id: any) => parseInt(id)))})`
+          : Prisma.sql`SELECT dir_geolocalizacion::public.geometry as geom FROM clientes_direcciones WHERE cli_id IN (${Prisma.join(validIds)})`}
       ) sub
     `;
 
@@ -32,18 +33,27 @@ export async function POST(request: Request) {
 
     if (!endLng || !endLat) return NextResponse.json([]);
 
-    // 2. Consultar OSRM para obtener la ruta real
-    const osrmRes = await fetch(
-      `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`
-    );
-    const osrmData = await osrmRes.json();
-
-    if (!osrmData.routes || osrmData.routes.length === 0) {
-      console.warn("No se pudo obtener ruta de OSRM");
-      return NextResponse.json([]);
-    }
-
-    const routeGeoJSON = JSON.stringify(osrmData.routes[0].geometry);
+    const routeGeoJSON = await (async () => {
+      try {
+        const osrmRes = await fetch(
+          `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`,
+          { signal: AbortSignal.timeout(3000) }
+        );
+        if (osrmRes.ok) {
+          const osrmData = await osrmRes.json();
+          if (osrmData.routes?.[0]?.geometry) {
+            return JSON.stringify(osrmData.routes[0].geometry);
+          }
+        }
+      } catch (e) {
+        console.warn("OSRM Falló, usando línea recta como fallback:", e);
+      }
+      // Fallback: Línea recta entre origen y destino
+      return JSON.stringify({
+        type: "LineString",
+        coordinates: [[startLng, startLat], [endLng, endLat]]
+      });
+    })();
 
     // 3. Obtener la categoría del móvil usando SQL directo
     const movilRes: any = await prisma.$queryRaw`
@@ -65,9 +75,9 @@ export async function POST(request: Request) {
       JOIN punto_cobro_tarifas pct ON pc.pun_cob_id = pct.pun_tar_pun_cob_id
       WHERE pct.pun_tar_mov_cat_id = ${movilCatId}
       ${formaPagoId ? Prisma.sql`AND pct.pun_tar_forma_pago_id = ${parseInt(formaPagoId)}` : Prisma.empty}
-      AND ST_DWithin(
-        pc.pun_cob_ubicacion::geometry,
-        ST_SetSRID(ST_GeomFromGeoJSON(${routeGeoJSON}), 4326),
+      AND public.ST_DWithin(
+        pc.pun_cob_ubicacion::public.geometry,
+        public.ST_SetSRID(public.ST_GeomFromGeoJSON(${routeGeoJSON}), 4326),
         0.005 -- Aproximadamente 500 metros de la carretera real
       )
     `;

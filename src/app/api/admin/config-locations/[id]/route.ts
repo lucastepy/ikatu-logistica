@@ -52,7 +52,7 @@ export async function PUT(
             zon_color = ${data.color},
             zon_usuario_mod = ${data.usuario || "SISTEMA"},
             zon_fecha_mod = NOW(),
-            zon_poligono = ST_SetSRID(ST_Multi(ST_GeomFromGeoJSON(${JSON.stringify(data.poligono)})), 4326)
+            zon_poligono = public.ST_SetSRID(public.ST_Multi(public.ST_GeomFromGeoJSON(${JSON.stringify(data.poligono)})), 4326)
           WHERE zon_id = ${zid}
         `;
       } else {

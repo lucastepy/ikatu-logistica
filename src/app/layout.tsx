@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import LayoutWrapper from "../components/layout/LayoutWrapper";
+
+import TenantInterceptor from "@/components/auth/TenantInterceptor";
 
 export const metadata: Metadata = {
-  title: "Ikatu Logística - Administración",
-  description: "Sistema de gestión de entidades y pagos digitales",
+  title: "Ikatu Logística",
+  description: "Sistema de gestión",
 };
 
 export default function RootLayout({
@@ -14,8 +15,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
-      <body className="antialiased font-sans">
-        <LayoutWrapper>{children}</LayoutWrapper>
+      <body className="antialiased font-sans bg-[#f7fafe]">
+        <TenantInterceptor />
+        {children}
       </body>
     </html>
   );

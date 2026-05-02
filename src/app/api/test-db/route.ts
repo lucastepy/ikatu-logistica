@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { getPrisma } from "@/lib/prisma";
+const prisma = getPrisma("tenant_la_transportadora");
 
 export async function GET() {
   try {
-    const deps = await prisma.$queryRaw`SELECT dep_cod, dep_dsc FROM departamentos WHERE dep_dsc ILIKE '%CENTRAL%' OR dep_dsc ILIKE '%ASUNCION%'`;
-    const zonas = await prisma.$queryRaw`SELECT zon_id, zon_nombre FROM zonas LIMIT 20`;
+    const extensions = await prisma.$queryRaw`SELECT extname, extversion FROM pg_extension`;
+    const postgisSchema = await prisma.$queryRaw`SELECT n.nspname FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE p.proname = 'st_makepoint' LIMIT 1`;
 
     return NextResponse.json({
-      departamentos: deps,
-      zonas: zonas
+      extensions,
+      postgisSchema: postgisSchema
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

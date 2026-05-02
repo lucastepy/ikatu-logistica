@@ -9,29 +9,32 @@ import { CustomModal } from "@/components/ui/dialog-custom";
 import { ConfirmModal } from "@/components/ui/modal-confirm";
 import { 
   Plus, 
-  Ruler, 
+  Search, 
   Edit3, 
   Trash2, 
   CheckCircle2, 
   Save, 
-  Search,
-  ChevronLeft, 
-  ChevronRight, 
-  ChevronsLeft, 
+  Ruler,
+  Package,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
   ChevronsRight,
-  Package
+  Loader2
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { useFieldSecurity } from "@/hooks/useFieldSecurity";
 
 interface UnidadMedida {
   uni_med_cod: number;
   uni_med_dsc: string;
-  uni_med_fecha_alta: string | null;
 }
 
 export default function UnidadesMedidaPage() {
+  const { isHidden, isReadOnly, loadingRestrictions } = useFieldSecurity("UnidadMedida");
   const [unidades, setUnidades] = useState<UnidadMedida[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   
@@ -57,7 +60,17 @@ export default function UnidadesMedidaPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/unidades-medida");
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+
+      const res = await fetch("/api/admin/unidades-medida", {
+        headers: {
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        }
+      });
       const data = await res.json();
       setUnidades(Array.isArray(data) ? data : []);
       setCurrentPage(1);
@@ -82,29 +95,46 @@ export default function UnidadesMedidaPage() {
     setEditingItem(item);
     setFormData({ 
       cod: item.uni_med_cod.toString(), 
-      dsc: item.uni_med_dsc 
+      dsc: item.uni_med_dsc || ""
     });
     setIsModalOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const method = editingItem ? "PUT" : "POST";
-    const url = editingItem ? `/api/admin/unidades-medida/${editingItem.uni_med_cod}` : "/api/admin/unidades-medida";
+    setIsSubmitting(true);
+    try {
+      const method = editingItem ? "PUT" : "POST";
+      const url = editingItem ? `/api/admin/unidades-medida/${editingItem.uni_med_cod}` : "/api/admin/unidades-medida";
 
-    const res = await fetch(url, {
-      method,
-      body: JSON.stringify(formData),
-      headers: { "Content-Type": "application/json" }
-    });
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
 
-    if (res.ok) {
-      setIsModalOpen(false);
-      showToast(editingItem ? "Unidad actualizada" : "Unidad creada");
-      fetchData();
-    } else {
-      const err = await res.json();
-      showToast(err.error || "Error al procesar");
+      const res = await fetch(url, {
+        method,
+        body: JSON.stringify(formData),
+        headers: { 
+          "Content-Type": "application/json",
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        }
+      });
+
+      if (res.ok) {
+        setIsModalOpen(false);
+        showToast(editingItem ? "Unidad actualizada" : "Unidad creada");
+        fetchData();
+      } else {
+        const err = await res.json();
+        showToast(err.error || "Error al procesar");
+      }
+    } catch (e) {
+      console.error(e);
+      showToast("Error de conexión");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -115,7 +145,18 @@ export default function UnidadesMedidaPage() {
 
   const onConfirmDelete = async () => {
     if (!itemToDelete) return;
-    const res = await fetch(`/api/admin/unidades-medida/${itemToDelete}`, { method: "DELETE" });
+    const userJson = localStorage.getItem("user");
+    const user = userJson ? JSON.parse(userJson) : null;
+    const tenantId = user?.tenantId || "public";
+
+    const res = await fetch(`/api/admin/unidades-medida/${itemToDelete}`, { 
+      method: "DELETE",
+      headers: {
+        "x-tenant-id": tenantId,
+        "x-user-email": user?.email || "",
+        "x-user-profile": user?.perfil_cod?.toString() || ""
+      }
+    });
     if (res.ok) {
       setIsConfirmOpen(false);
       showToast("Unidad eliminada");
@@ -128,8 +169,8 @@ export default function UnidadesMedidaPage() {
 
   // Filtrado
   const filteredUnidades = unidades.filter(u => 
-    u.uni_med_dsc.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.uni_med_cod.toString().includes(searchTerm)
+    (u.uni_med_dsc || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (u.uni_med_cod || "").toString().includes(searchTerm)
   );
 
   // Lógica de Paginación
@@ -142,6 +183,10 @@ export default function UnidadesMedidaPage() {
       setCurrentPage(page);
     }
   };
+
+  if (loadingRestrictions && loading) {
+    return <div className="h-screen flex items-center justify-center text-slate-400 font-bold uppercase tracking-widest animate-pulse">Sincronizando Seguridad...</div>;
+  }
 
   return (
     <div className="p-8 space-y-8 animate-in fade-in duration-500 relative">
@@ -190,8 +235,8 @@ export default function UnidadesMedidaPage() {
             <table className="w-full text-left">
               <thead>
                 <tr className="border-b border-border bg-background/30 text-xs uppercase tracking-widest text-muted font-bold">
-                  <th className="px-6 py-4 w-24 text-center">Código</th>
-                  <th className="px-6 py-4">Descripción / Unidad</th>
+                  {!isHidden("uni_med_cod") && <th className="px-6 py-4 w-24 text-center">Código</th>}
+                  {!isHidden("uni_med_dsc") && <th className="px-6 py-4">Descripción / Unidad</th>}
                   <th className="px-6 py-4 text-right">Acciones</th>
                 </tr>
               </thead>
@@ -202,19 +247,23 @@ export default function UnidadesMedidaPage() {
                   <tr><td colSpan={4} className="px-6 py-8 text-center text-muted italic">No hay unidades registradas.</td></tr>
                 ) : currentUnidades.map((item) => (
                   <tr key={item.uni_med_cod} className="hover:bg-background/40 transition-colors group">
-                    <td className="px-6 py-4 text-center">
-                       <Badge variant="secondary" className="font-mono text-[10px] bg-slate-100 text-slate-500 border-slate-200">
-                         #{item.uni_med_cod}
-                       </Badge>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-lg bg-accent/5 text-accent border border-accent/10">
-                          <Ruler className="h-4 w-4" />
+                    {!isHidden("uni_med_cod") && (
+                      <td className="px-6 py-4 text-center">
+                        <Badge variant="secondary" className="font-mono text-[10px] bg-slate-100 text-slate-500 border-slate-200">
+                          #{item.uni_med_cod}
+                        </Badge>
+                      </td>
+                    )}
+                    {!isHidden("uni_med_dsc") && (
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-lg bg-accent/5 text-accent border border-accent/10">
+                            <Ruler className="h-4 w-4" />
+                          </div>
+                          <p className="font-bold text-foreground text-sm tracking-tight">{item.uni_med_dsc}</p>
                         </div>
-                        <p className="font-bold text-foreground text-sm tracking-tight">{item.uni_med_dsc}</p>
-                      </div>
-                    </td>
+                      </td>
+                    )}
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end gap-2">
                         <Button onClick={() => openEdit(item)} variant="outline" size="sm" className="h-8 gap-2 border-slate-200 hover:bg-slate-50 transition-all px-3 font-bold text-xs shadow-sm text-slate-600">
@@ -257,26 +306,37 @@ export default function UnidadesMedidaPage() {
         </CardContent>
       </Card>
 
-      <CustomModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingItem ? "Editar Unidad" : "Nueva Unidad de Medida"}>
+      <CustomModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        title={editingItem ? "Editar Unidad" : "Nueva Unidad de Medida"}
+        className="max-w-xl shadow-[0_50px_100px_-20px_rgba(0,0,0,0.3)] border-white/50 backdrop-blur-xl"
+      >
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-          <div className="space-y-2">
-            <Label>Descripción / Nombre</Label>
-            <div className="relative">
-              <Input 
-                value={formData.dsc} 
-                onChange={(e) => setFormData({...formData, dsc: e.target.value})} 
-                placeholder="Ej: Kilogramos, Metros Cúbicos..."
-                className="pl-9"
-                required 
-                autoFocus
-              />
-              <Package className="absolute left-3 top-2.5 h-4 w-4 text-muted opacity-40" />
+          {!isHidden("uni_med_dsc") && (
+            <div className="space-y-2">
+              <Label className="text-slate-700 font-bold">Descripción / Nombre</Label>
+              <div className="relative">
+                <Input 
+                  value={formData.dsc} 
+                  onChange={(e) => setFormData({...formData, dsc: e.target.value})} 
+                  placeholder="Ej: Kilogramos, Metros Cúbicos..."
+                  className="h-12 pl-9 text-slate-950 font-medium bg-white border-slate-200 shadow-sm"
+                  required 
+                  autoFocus
+                  disabled={isReadOnly("uni_med_dsc")}
+                />
+                <Package className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 opacity-60" />
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="flex gap-3 pt-4">
-            <Button type="submit" className="flex-1 bg-accent text-white font-bold gap-2 shadow-lg"><Save className="h-4 w-4" /> {editingItem ? "Actualizar" : "Guardar Unidad"}</Button>
-            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1">Cancelar</Button>
+            <Button type="submit" disabled={isSubmitting} className="flex-1 bg-accent text-white font-bold gap-2 shadow-lg h-12 rounded-xl transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-70 disabled:scale-100">
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {isSubmitting ? "Guardando..." : (editingItem ? "Actualizar" : "Guardar Unidad")}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1 h-12 rounded-xl">Cancelar</Button>
           </div>
         </form>
       </CustomModal>

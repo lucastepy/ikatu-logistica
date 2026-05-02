@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { getPrisma } from "@/lib/prisma";
+const prisma = getPrisma("tenant_la_transportadora");
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -14,7 +15,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         UPDATE puntos_cobro SET
           pun_cob_nombre = ${nombre},
           pun_cob_tipo = ${parseInt(tipo)},
-          pun_cob_ubicacion = ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326),
+          pun_cob_ubicacion = public.ST_SetSRID(public.ST_MakePoint(CAST(${lng} AS float8), CAST(${lat} AS float8)), 4326),
           pun_cob_usuario_mod = ${usuario || "ADMIN"},
           pun_cob_fecha_mod = now()
         WHERE pun_cob_id = ${punId}

@@ -12,7 +12,7 @@ model ActividadEconomica {
   act_eco_dsc          String    @db.VarChar(255)
   act_eco_usuario_alta String?   @db.VarChar(100)
   act_eco_fecha_alta   DateTime? @default(now()) @db.Timestamptz
-  empresas            Empresa[]
+  empresas             Empresa[]
 
   @@map("actividad_economica")
 }
@@ -24,6 +24,7 @@ model Departamento {
   dep_fecha_alta   DateTime? @default(now()) @db.Timestamptz
   distritos        Distrito[]
   empresas         Empresa[]
+
   depositos        Deposito[]
 
   @@map("departamentos")
@@ -38,6 +39,7 @@ model Distrito {
   departamento     Departamento @relation(fields: [dis_dep_cod], references: [dep_cod])
   ciudades         Ciudad[]
   empresas         Empresa[]
+
   depositos        Deposito[]
 
   @@id([dis_dep_cod, dis_cod])
@@ -52,6 +54,7 @@ model Ciudad {
   distrito    Distrito @relation(fields: [ciu_dep_cod, ciu_dis_cod], references: [dis_dep_cod, dis_cod])
   barrios     Barrio[]
   empresas    Empresa[]
+
   depositos   Deposito[]
 
   @@id([ciu_dep_cod, ciu_dis_cod, ciu_cod])
@@ -66,40 +69,35 @@ model Barrio {
   bar_dsc     String @db.VarChar(100)
   ciudad      Ciudad @relation(fields: [bar_dep_cod, bar_dis_cod, bar_ciu_cod], references: [ciu_dep_cod, ciu_dis_cod, ciu_cod])
   empresas    Empresa[]
+
   depositos   Deposito[]
 
   @@id([bar_dep_cod, bar_dis_cod, bar_ciu_cod, bar_cod])
   @@map("barrios")
 }
 
-model Empresa {
-  empresa_cod          Int       @id @default(autoincrement())
-  empresa_nom          String?   @db.VarChar(50)
-  empresa_ruc          String?   @db.VarChar(15)
-  empresa_estado       String?   @db.VarChar(1)
-  empresa_saldo        Decimal?  @db.Decimal(15, 2)
-  empresa_usuario_alta String?   @db.VarChar(100)
-  empresa_fecha_alta   DateTime? @default(now()) @db.Timestamptz
-  empresa_act_eco      Int?
-  empresa_dep          Int?
-  empresa_dis          Int?
-  empresa_ciu          Int?
-  empresa_bar          Int?
-  empresa_nom_fan      String?   @db.VarChar(100)
-  empresa_mail         String?   @db.VarChar(100)
-  empresa_dir          String?   @db.VarChar(200)
-  empresa_tel          String?   @db.VarChar(20)
-  empresa_propietario  String?   @db.VarChar(50)
+model ClienteSaas {
+  cli_saas_cod          Int       @id
+  cli_saas_nom          String?   @db.VarChar(50)
+  cli_saas_ruc          String?   @db.VarChar(15)
+  cli_saas_estado       String?   @db.VarChar(1)
+  cli_saas_usuario_alta String?   @db.VarChar(100)
+  cli_saas_fecha_alta   DateTime? @default(now()) @db.Timestamptz
+  cli_saas_usuario_mod  String?   @db.VarChar(100)
+  cli_saas_fecha_mod    DateTime? @db.Timestamptz
+  cli_saas_nom_fan      String?   @db.VarChar(100)
+  cli_saas_mail         String?   @db.VarChar(100)
+  cli_saas_dir          String?   @db.VarChar(200)
+  cli_saas_tel          String?   @db.VarChar(20)
+  cli_saas_propietario  String?   @db.VarChar(50)
+  cli_saas_tenant       String?   @db.VarChar(50)
+  cli_saas_plan_id      Int?
+  // cli_saas_geo          Unsupported("geometry(Point, 4326)")?
 
-  actividad            ActividadEconomica? @relation(fields: [empresa_act_eco], references: [act_eco_cod])
-  departamento         Departamento?       @relation(fields: [empresa_dep], references: [dep_cod])
-  distrito             Distrito?           @relation(fields: [empresa_dep, empresa_dis], references: [dis_dep_cod, dis_cod])
-  ciudad               Ciudad?             @relation(fields: [empresa_dep, empresa_dis, empresa_ciu], references: [ciu_dep_cod, ciu_dis_cod, ciu_cod])
-  barrio               Barrio?             @relation(fields: [empresa_dep, empresa_dis, empresa_ciu, empresa_bar], references: [bar_dep_cod, bar_dis_cod, bar_ciu_cod, bar_cod])
-  
-  usuarios             Usuario[]
+  plan                  Plan?     @relation(fields: [cli_saas_plan_id], references: [pla_id])
 
-  @@map("empresa")
+
+  @@map("clientes_saas")
 }
 
 model Menu {
@@ -134,7 +132,7 @@ model Perfil {
   menu_cod      Int
   menu          Menu      @relation(fields: [menu_cod], references: [menu_cod])
   usuarios      Usuario[]
-  workflow      FlujoEstadoConfig[]
+  restricciones RestriccionesPerfiles[]
 
   @@map("perfiles")
 }
@@ -156,40 +154,87 @@ model Sucursal {
   suc_telefono  String?   @db.VarChar(50)
   suc_estado    String?   @db.VarChar(1)
   suc_tenantid  Int
-  usuarios      Usuario[]
+  // usuarios      Usuario[]
 
   @@map("sucursales")
 }
 
 model Usuario {
-  usuario_email             String    @id
-  usuario_sucursal          Int?
-  usuario_nombre            String
-  usuario_password          String
-  perfil_cod                Int
-  usuario_estado            String?
-  usuario_primer_ingreso    Boolean?
-  usuario_tenantid          Int
-  usuario_fecha_creacion    DateTime? @default(now()) @db.Timestamptz
-  usuario_imagen_url        String?   @db.VarChar(500)
-  usuario_empresa           Int
+  usuario_email                String    @id
+  usuario_nombre               String
+  usuario_password             String
+  perfil_cod                   Int
+  usuario_estado               String?
+  usuario_primer_ingreso       Boolean?
+  usuario_reset_token          String?
+  usuario_tenantid             String    @db.VarChar(50)
+  usuario_fecha_creacion       DateTime? @default(now()) @db.Timestamptz
+  usuario_usuario_creacion     String?   @db.VarChar(100)
+  usuario_fecha_modificacion   DateTime? @db.Timestamptz
+  usuario_usuario_modificacion String?   @db.VarChar(100)
+  usuario_imagen_url           String?   @db.VarChar(500)
 
-  perfil                    Perfil    @relation(fields: [perfil_cod], references: [perfil_cod])
-  sucursal                  Sucursal? @relation(fields: [usuario_sucursal], references: [suc_id])
-  empresa                   Empresa   @relation(fields: [usuario_empresa], references: [empresa_cod])
+  perfil                       Perfil    @relation(fields: [perfil_cod], references: [perfil_cod])
+  restricciones                RestriccionesUsuarios[]
 
   @@map("usuarios")
 }
 
+model UsuarioAdmin {
+  usr_admin_cod      String  @id @default(uuid()) @db.Uuid
+  usr_admin_username String  @unique @db.VarChar(50)
+  usr_admin_password String
+  usr_admin_nombre   String? @db.VarChar(100)
+
+  @@map("usuarios_admin")
+}
+
 model RestriccionesCampos {
-  id        Int       @id @default(autoincrement())
-  tabla     String    @db.VarChar(100)
-  columna   String    @db.VarChar(100)
-  oculto    Boolean?  @default(false)
-  editable  Boolean?  @default(true)
-  creado_en DateTime? @default(now()) @db.Timestamptz
+  res_cam_id           Int      @id @default(autoincrement())
+  res_cam_tabla        String   @db.VarChar(100)
+  res_cam_columna      String   @db.VarChar(100)
+  res_cam_oculto       Boolean? @default(false)
+  res_cam_editable     Boolean? @default(true)
+  res_cam_tenantid     String?  @db.VarChar(50)
+  res_cam_usuario_alta String   @db.VarChar(50)
+  res_cam_fecha_alta   DateTime @default(now()) @db.Timestamptz
+  res_cam_usuario_mod  String?  @db.VarChar(50)
+  res_cam_fecha_mod    DateTime? @db.Timestamptz
+
+  perfiles             RestriccionesPerfiles[]
+  usuarios             RestriccionesUsuarios[]
 
   @@map("restricciones_campos")
+}
+
+model RestriccionesPerfiles {
+  res_per_id        Int                 @id @default(autoincrement())
+  res_cam_id        Int
+  perfil_cod        Int
+  res_per_usuario_alta String            @db.VarChar(50)
+  res_per_fecha_alta   DateTime          @default(now()) @db.Timestamptz
+  res_per_usuario_mod  String?           @db.VarChar(50)
+  res_per_fecha_mod    DateTime?         @db.Timestamptz
+  
+  restriccion       RestriccionesCampos @relation(fields: [res_cam_id], references: [res_cam_id], onDelete: Cascade)
+  perfil            Perfil              @relation(fields: [perfil_cod], references: [perfil_cod])
+
+  @@map("restricciones_perfiles")
+}
+
+model RestriccionesUsuarios {
+  res_usr_id        Int                 @id @default(autoincrement())
+  res_cam_id        Int
+  usuario_email     String
+  res_usr_usuario_alta String            @db.VarChar(50)
+  res_usr_fecha_alta   DateTime          @default(now()) @db.Timestamptz
+  res_usr_usuario_mod  String?           @db.VarChar(50)
+  res_usr_fecha_mod    DateTime?         @db.Timestamptz
+  
+  restriccion       RestriccionesCampos @relation(fields: [res_cam_id], references: [res_cam_id], onDelete: Cascade)
+  usuario           Usuario             @relation(fields: [usuario_email], references: [usuario_email])
+
+  @@map("restricciones_usuarios")
 }
 
 model SegEmailLog {
@@ -547,7 +592,7 @@ model FlujoEstadoConfig {
   flu_conf_id_estado_siguiente Int
   flu_conf_es_estado_inicial Boolean @default(false)
   flu_conf_etiqueta_accion  String?  @db.VarChar(50)
-
+  
   // Auditoría
   flu_conf_usuario_alta     String   @db.VarChar(50)
   flu_conf_fecha_alta       DateTime @default(now()) @db.Timestamptz
@@ -555,7 +600,6 @@ model FlujoEstadoConfig {
   flu_conf_fecha_mod        DateTime? @db.Timestamptz
 
   objeto         Objeto       @relation(fields: [flu_conf_obj_id], references: [obj_id], onDelete: Cascade)
-  perfil         Perfil       @relation(fields: [flu_conf_perfil_cod], references: [perfil_cod], onDelete: Cascade)
   estado_actual  FlujoEstado? @relation("EstadoActual", fields: [flu_conf_id_estado_actual], references: [flu_est_id], onDelete: Cascade)
   estado_sig     FlujoEstado  @relation("EstadoSiguiente", fields: [flu_conf_id_estado_siguiente], references: [flu_est_id], onDelete: Cascade)
 
@@ -640,3 +684,107 @@ model ViajePuntoCobro {
   @@id([vpc_via_id, vpc_pun_cob_id])
   @@map("viaje_puntos_cobro")
 }
+model Plan {
+  pla_id           Int       @id
+  pla_nom          String    @db.VarChar(100)
+  pla_desc         String?   @db.Text
+  pla_tipo_cobro   String    @db.VarChar(20) // UNICO, RECURRENTE, MIXTO
+  pla_moneda       Int?
+  pla_est          Boolean   @default(true)
+  
+  moneda           Moneda?   @relation(fields: [pla_moneda], references: [moneda_cod])
+  pla_usuario_alta String    @db.VarChar(50)
+  pla_fecha_alta   DateTime  @default(now()) @db.Timestamptz
+  pla_usuario_mod  String?   @db.VarChar(50)
+  pla_fecha_mod    DateTime? @db.Timestamptz
+
+  componentes      PlanComponente[]
+  clientes         ClienteSaas[]
+
+  @@map("planes")
+}
+
+model PlanComponente {
+  comp_id           Int       @id
+  comp_pla_id       Int
+  comp_nom          String    @db.VarChar(100)
+  comp_tipo         String    @db.VarChar(20) // FIJO, POR_TRANSACCION
+  comp_monto        Decimal   @default(0) @db.Decimal(18, 2)
+  comp_recurrencia  String    @db.VarChar(20) // UNA_VEZ, SEMANAL, MENSUAL, etc.
+  comp_est          Boolean   @default(true)
+  
+  comp_usuario_alta String    @db.VarChar(50)
+  comp_fecha_alta   DateTime  @default(now()) @db.Timestamptz
+  comp_usuario_mod  String?   @db.VarChar(50)
+  comp_fecha_mod    DateTime? @db.Timestamptz
+
+  plan              Plan      @relation(fields: [comp_pla_id], references: [pla_id], onDelete: Cascade)
+  matriz            PlanMatrizEscalonada[]
+
+  @@map("planes_componentes")
+}
+
+model PlanMatrizEscalonada {
+  mat_id           Int       @id
+  mat_comp_id      Int
+  mat_desde        Int
+  mat_hasta        Int?
+  mat_valor        Decimal   @db.Decimal(18, 4)
+  mat_es_porcentaje Boolean   @default(false)
+  
+  mat_usuario_alta String    @db.VarChar(50)
+  mat_fecha_alta   DateTime  @default(now()) @db.Timestamptz
+  mat_usuario_mod  String?   @db.VarChar(50)
+  mat_fecha_mod    DateTime? @db.Timestamptz
+
+  componente       PlanComponente @relation(fields: [mat_comp_id], references: [comp_id], onDelete: Cascade)
+
+  @@map("planes_matriz_escalonada")
+}
+
+model Moneda {
+  moneda_cod          Int       @id
+  moneda_nom          String    @db.VarChar(50)
+  moneda_sim          String?   @db.Char(3)
+  moneda_usuario_alta String    @db.VarChar(50)
+  moneda_fecha_alta   DateTime  @default(now()) @db.Timestamptz
+  moneda_usuario_mod  String?   @db.VarChar(50)
+  moneda_fecha_mod    DateTime? @db.Timestamptz
+
+  planes              Plan[]
+
+  @@map("monedas")
+}
+
+model Empresa {
+  empresa_cod          Int       @id @default(autoincrement())
+  empresa_nom          String?   @db.VarChar(50)
+  empresa_ruc          String?   @db.VarChar(15)
+  empresa_estado       String?   @db.VarChar(1)
+  empresa_saldo        Decimal?  @db.Decimal(15, 2)
+  empresa_usuario_alta String?   @db.VarChar(100)
+  empresa_fecha_alta   DateTime? @default(now()) @db.Timestamptz
+  empresa_usuario_mod  String?   @db.VarChar(100)
+  empresa_fecha_mod    DateTime? @db.Timestamptz
+  empresa_act_eco      Int?
+  empresa_dep          Int?
+  empresa_dis          Int?
+  empresa_ciu          Int?
+  empresa_bar          Int?
+  empresa_nom_fan      String?   @db.VarChar(100)
+  empresa_mail         String?   @db.VarChar(100)
+  empresa_dir          String?   @db.VarChar(200)
+  empresa_tel          String?   @db.VarChar(20)
+  empresa_propietario  String?   @db.VarChar(50)
+  empresa_logo_empres  String?   @db.VarChar(150)
+  empresa_logo_reporte String?   @db.VarChar(150)
+
+  actividad            ActividadEconomica? @relation(fields: [empresa_act_eco], references: [act_eco_cod])
+  departamento         Departamento?       @relation(fields: [empresa_dep], references: [dep_cod])
+  distrito             Distrito?           @relation(fields: [empresa_dep, empresa_dis], references: [dis_dep_cod, dis_cod])
+  ciudad               Ciudad?             @relation(fields: [empresa_dep, empresa_dis, empresa_ciu], references: [ciu_dep_cod, ciu_dis_cod, ciu_cod])
+  barrio               Barrio?             @relation(fields: [empresa_dep, empresa_dis, empresa_ciu, empresa_bar], references: [bar_dep_cod, bar_dis_cod, bar_ciu_cod, bar_cod])
+
+  @@map("empresa")
+}
+

@@ -3,7 +3,12 @@ import { prisma } from "../../../lib/db";
 
 export async function GET(request: Request) {
   try {
-    const userEmail = "lucastellano@gmail.com"; 
+    const { searchParams } = new URL(request.url);
+    const userEmail = searchParams.get("email");
+
+    if (!userEmail) {
+      return NextResponse.json({ error: "Email required" }, { status: 400 });
+    }
 
     const user = await prisma.usuario.findUnique({
       where: { usuario_email: userEmail },

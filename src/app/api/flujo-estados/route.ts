@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { getPrisma, prismaPublic } from "@/lib/prisma";
+const prisma = getPrisma("tenant_la_transportadora");
 
 export async function GET() {
   try {
@@ -13,7 +14,7 @@ export async function GET() {
       ...data.map((i: any) => i.flu_est_usuario_mod)
     ].filter(Boolean)));
 
-    const users = await prisma.usuario.findMany({
+    const users = await prismaPublic.usuario.findMany({
       where: { usuario_email: { in: emails as string[] } },
       select: { usuario_email: true, usuario_nombre: true }
     });

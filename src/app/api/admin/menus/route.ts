@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "../../../../lib/db";
+import { prismaPublic as prisma } from "@/lib/prisma";
 
 // GET: Listar todos los menús
 export async function GET() {

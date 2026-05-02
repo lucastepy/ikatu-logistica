@@ -1,5 +1,7 @@
 "use client";
 
+import { useFieldSecurity } from "@/hooks/useFieldSecurity";
+
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,7 +11,7 @@ import { CustomModal } from "@/components/ui/dialog-custom";
 import { ConfirmModal } from "@/components/ui/modal-confirm";
 import { 
   Plus, Edit3, Trash2, CheckCircle2, Save, Search, 
-  MapPin, DollarSign, Wallet, Hash, Type, Navigation
+  MapPin, DollarSign, Wallet, Hash, Type, Navigation, Loader2
 } from "lucide-react";
 import { getLoggedUserEmail } from "@/lib/auth-utils";
 import { Badge } from "@/components/ui/badge";
@@ -22,11 +24,13 @@ const PointMap = dynamic(() => import("../../../components/maps/PointMap"), {
 }) as any;
 
 export default function PuntosCobroPage() {
+  const { isHidden, isReadOnly, loadingRestrictions } = useFieldSecurity("PuntoCobro");
   const [data, setData] = useState<any[]>([]);
   const [tipos, setTipos] = useState<any[]>([]);
   const [categorias, setCategorias] = useState<any[]>([]);
   const [formasPago, setFormasPago] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTabModal, setActiveTabModal] = useState<"general" | "tarifas">("general");
@@ -58,17 +62,40 @@ export default function PuntosCobroPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+      const commonHeaders = {
+        "x-tenant-id": tenantId,
+        "x-user-email": user?.email || "",
+        "x-user-profile": user?.perfil_cod?.toString() || ""
+      };
+
       const [resPuntos, resTipos, resCats, resFp] = await Promise.all([
-        fetch("/api/puntos-cobro"),
-        fetch("/api/tipo-puntos-cobro"),
-        fetch("/api/movil-categorias"),
-        fetch("/api/formas-pago")
+        fetch("/api/puntos-cobro", { headers: commonHeaders }),
+        fetch("/api/tipo-puntos-cobro", { headers: commonHeaders }),
+        fetch("/api/movil-categorias", { headers: commonHeaders }),
+        fetch("/api/formas-pago", { headers: commonHeaders })
       ]);
-      setData(await resPuntos.json());
-      setTipos(await resTipos.json());
-      setCategorias(await resCats.json());
-      setFormasPago(await resFp.json());
-    } catch (e) { console.error(e); }
+
+      const [puntos, tipos, cats, fp] = await Promise.all([
+        resPuntos.json(),
+        resTipos.json(),
+        resCats.json(),
+        resFp.json()
+      ]);
+
+      setData(Array.isArray(puntos) ? puntos : []);
+      setTipos(Array.isArray(tipos) ? tipos : []);
+      setCategorias(Array.isArray(cats) ? cats : []);
+      setFormasPago(Array.isArray(fp) ? fp : []);
+    } catch (e) { 
+      console.error(e); 
+      setData([]);
+      setTipos([]);
+      setCategorias([]);
+      setFormasPago([]);
+    }
     finally { setLoading(false); }
   };
 
@@ -116,24 +143,41 @@ export default function PuntosCobroPage() {
 
   const formatNumber = (val: string | number) => {
     if (!val && val !== 0) return "";
-    const num = typeof val === "string" ? val.replace(/\D/g, "") : val.toString();
-    if (num === "") return "";
-    return new Intl.NumberFormat('es-PY').format(parseInt(num));
+    let str = val.toString();
+    
+    // Si termina en coma o punto, dejamos que el usuario siga escribiendo
+    if (str.endsWith(",") || str.endsWith(".")) return str;
+
+    const parts = str.split(/[.,]/);
+    let integerPart = parts[0].replace(/\D/g, "");
+    let decimalPart = parts.length > 1 ? parts[1].replace(/\D/g, "") : null;
+
+    if (integerPart === "" && decimalPart === null) return "";
+    if (integerPart === "" && decimalPart !== null) return `0,${decimalPart}`;
+    
+    const formattedInteger = new Intl.NumberFormat('es-PY').format(parseInt(integerPart));
+    return decimalPart !== null ? `${formattedInteger},${decimalPart}` : formattedInteger;
   };
 
   const updateTarifa = (catId: number, fpId: number, val: string) => {
-    // Solo dejar números para el estado
-    const numericValue = val.replace(/\D/g, "");
-    setTarifasMatrix({
-      ...tarifasMatrix,
-      [`${catId}-${fpId}`]: numericValue
-    });
+    // Permitir números y un separador decimal (convertimos coma a punto para el estado)
+    const normalized = val.replace(",", ".");
+    // Validar que sea un número válido (opcionalmente decimal)
+    if (normalized === "" || /^\d*\.?\d*$/.test(normalized)) {
+      setTarifasMatrix({
+        ...tarifasMatrix,
+        [`${catId}-${fpId}`]: normalized
+      });
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const usuarioEmail = getLoggedUserEmail();
+    const userJson = localStorage.getItem("user");
+    const user = userJson ? JSON.parse(userJson) : null;
+    const tenantId = user?.tenantId || "public";
+    const usuarioEmail = user?.email || "SISTEMA";
 
     // Convertir matriz a array para la API (SOLO de las seleccionadas)
     const tarifasArray = Object.entries(tarifasMatrix)
@@ -146,24 +190,37 @@ export default function PuntosCobroPage() {
         return { catId, formaPagoId, monto };
       });
 
-    const method = editingItem ? "PUT" : "POST";
-    const url = editingItem ? `/api/puntos-cobro/${editingItem.pun_cob_id}` : "/api/puntos-cobro";
-    
-    const res = await fetch(url, { 
-      method, 
-      body: JSON.stringify({ 
-        ...formData, 
-        usuario: usuarioEmail, 
-        tarifas: tarifasArray,
-        formasPagoHabilitadas: formasPagoSeleccionadas
-      }), 
-      headers: { "Content-Type": "application/json" } 
-    });
+    setIsSubmitting(true);
+    try {
+      const method = editingItem ? "PUT" : "POST";
+      const url = editingItem ? `/api/puntos-cobro/${editingItem.pun_cob_id}` : "/api/puntos-cobro";
 
-    if (res.ok) { 
-      setIsModalOpen(false); 
-      showToast(editingItem ? "Registro actualizado" : "Registro creado"); 
-      fetchData(); 
+      const res = await fetch(url, { 
+        method, 
+        body: JSON.stringify({ 
+          ...formData, 
+          usuario: usuarioEmail, 
+          tarifas: tarifasArray,
+          formasPagoHabilitadas: formasPagoSeleccionadas
+        }), 
+        headers: { 
+          "Content-Type": "application/json",
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        } 
+      });
+
+      if (res.ok) { 
+        setIsModalOpen(false); 
+        showToast(editingItem ? "Registro actualizado" : "Registro creado"); 
+        fetchData(); 
+      }
+    } catch (e) {
+      console.error(e);
+      showToast("Error al guardar");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -174,6 +231,10 @@ export default function PuntosCobroPage() {
 
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
   const currentItems = filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  if (loadingRestrictions && loading) {
+    return <div className="h-screen flex items-center justify-center text-slate-400 font-bold uppercase tracking-widest animate-pulse">Sincronizando Seguridad...</div>;
+  }
 
   return (
     <div className="p-8 space-y-6 animate-in fade-in duration-500">
@@ -219,9 +280,9 @@ export default function PuntosCobroPage() {
             <table className="w-full text-left">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-[11px] tracking-tight text-slate-400 font-bold uppercase">
-                  <th className="px-8 py-4">Punto de Cobro</th>
-                  <th className="px-8 py-4">Tipo</th>
-                  <th className="px-8 py-4">Ubicación</th>
+                  {!isHidden("pun_cob_nombre") && <th className="px-8 py-4">Punto de Cobro</th>}
+                  {!isHidden("pun_cob_tipo") && <th className="px-8 py-4">Tipo</th>}
+                  {!isHidden("lat") && !isHidden("lng") && <th className="px-8 py-4">Ubicación</th>}
                   <th className="px-8 py-4">Última Modificación</th>
                   <th className="px-8 py-4 text-right">Acciones</th>
                 </tr>
@@ -233,20 +294,26 @@ export default function PuntosCobroPage() {
                   <tr><td colSpan={5} className="px-8 py-10 text-center text-slate-400 italic">No hay registros.</td></tr>
                 ) : currentItems.map((item) => (
                   <tr key={item.pun_cob_id} className="hover:bg-slate-50/30 transition-colors">
-                    <td className="px-8 py-4">
-                       <span className="font-bold text-slate-700">{item.pun_cob_nombre}</span>
-                    </td>
-                    <td className="px-8 py-4">
-                       <Badge variant="outline" className="bg-accent/5 text-accent border-accent/20 font-bold uppercase text-[9px] tracking-widest">
-                         {item.tipo_nombre}
-                       </Badge>
-                    </td>
-                    <td className="px-8 py-4">
-                       <div className="flex items-center gap-2 text-slate-500 text-xs">
-                         <Navigation className="h-3 w-3" />
-                         <span>{item.lat.toFixed(4)}, {item.lng.toFixed(4)}</span>
-                       </div>
-                    </td>
+                    {!isHidden("pun_cob_nombre") && (
+                      <td className="px-8 py-4">
+                        <span className="font-bold text-slate-700">{item.pun_cob_nombre}</span>
+                      </td>
+                    )}
+                    {!isHidden("pun_cob_tipo") && (
+                      <td className="px-8 py-4">
+                        <Badge variant="outline" className="bg-accent/5 text-accent border-accent/20 font-bold uppercase text-[9px] tracking-widest">
+                          {item.tipo_nombre}
+                        </Badge>
+                      </td>
+                    )}
+                    {!isHidden("lat") && !isHidden("lng") && (
+                      <td className="px-8 py-4">
+                        <div className="flex items-center gap-2 text-slate-500 text-xs">
+                          <Navigation className="h-3 w-3" />
+                          <span>{item.lat.toFixed(4)}, {item.lng.toFixed(4)}</span>
+                        </div>
+                      </td>
+                    )}
                     <td className="px-8 py-4">
                        <div className="flex flex-col text-[10px]">
                          <span className="text-slate-500 font-bold uppercase">{item.usuario_mod_nombre || item.usuario_alta_nombre}</span>
@@ -276,7 +343,12 @@ export default function PuntosCobroPage() {
         </CardContent>
       </Card>
 
-      <CustomModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={`${editingItem ? 'Editar' : 'Nuevo'} Punto de Cobro`} className="max-w-5xl">
+      <CustomModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        title={`${editingItem ? 'Editar' : 'Nuevo'} Punto de Cobro`} 
+        className="max-w-5xl shadow-[0_50px_100px_-20px_rgba(0,0,0,0.3)] border-white/50 backdrop-blur-xl"
+      >
         <div className="flex gap-2 p-1 bg-slate-100/50 rounded-xl w-fit border border-slate-200 mb-6">
           <button 
             type="button"
@@ -308,18 +380,36 @@ export default function PuntosCobroPage() {
                      </div>
                   </div>
 
-                  <div className="space-y-2">
-                     <Label className="flex items-center gap-2"><Type className="h-3 w-3 text-accent" /> Nombre</Label>
-                     <Input value={formData.nombre} onChange={e => setFormData({...formData, nombre: e.target.value})} placeholder="Nombre del punto..." required autoFocus className="h-11 rounded-xl" />
-                  </div>
+                  {!isHidden("pun_cob_nombre") && (
+                    <div className="space-y-2">
+                       <Label className="flex items-center gap-2"><Type className="h-3 w-3 text-accent" /> Nombre</Label>
+                       <Input 
+                          value={formData.nombre} 
+                          onChange={e => setFormData({...formData, nombre: e.target.value})} 
+                          placeholder="Nombre del punto..." 
+                          required 
+                          autoFocus 
+                          className="h-12 rounded-xl text-slate-950 font-medium border-slate-200 focus:border-accent focus:ring-accent bg-white" 
+                          disabled={isReadOnly("pun_cob_nombre")}
+                       />
+                    </div>
+                  )}
 
-                  <div className="space-y-2">
-                     <Label className="flex items-center gap-2"><Settings2 className="h-3 w-3 text-accent" /> Tipo de Cobro</Label>
-                     <select className="flex h-11 w-full rounded-xl border border-input bg-white px-3 text-sm focus:ring-2 focus:ring-accent outline-none" value={formData.tipo} onChange={e => setFormData({...formData, tipo: e.target.value})} required>
-                        <option value="">Seleccione un tipo...</option>
-                        {tipos.map(t => <option key={t.tip_pun_cob_id} value={t.tip_pun_cob_id}>{t.tip_pun_cob_nombre}</option>)}
-                     </select>
-                  </div>
+                  {!isHidden("pun_cob_tipo") && (
+                    <div className="space-y-2">
+                       <Label className="flex items-center gap-2"><Settings2 className="h-3 w-3 text-accent" /> Tipo de Cobro</Label>
+                       <select 
+                        className="flex h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-950 font-medium focus:ring-2 focus:ring-accent outline-none" 
+                        value={formData.tipo} 
+                        onChange={e => setFormData({...formData, tipo: e.target.value})} 
+                        required
+                        disabled={isReadOnly("pun_cob_tipo")}
+                       >
+                          <option value="">Seleccione un tipo...</option>
+                          {tipos.map(t => <option key={t.tip_pun_cob_id} value={t.tip_pun_cob_id}>{t.tip_pun_cob_nombre}</option>)}
+                       </select>
+                    </div>
+                  )}
 
                   <div className="space-y-3 pt-2">
                     <Label className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-400">Formas de Pago Habilitadas</Label>
@@ -350,11 +440,17 @@ export default function PuntosCobroPage() {
                      <Badge variant="outline" className="text-[10px] font-mono bg-white">{formData.lat.toFixed(4)}, {formData.lng.toFixed(4)}</Badge>
                   </div>
 
-                  <PointMap 
-                     lat={formData.lat} 
-                     lng={formData.lng} 
-                     onChange={(lat: number, lng: number) => setFormData({...formData, lat, lng})} 
-                  />
+                  {!isHidden("lat") && !isHidden("lng") && (
+                    <PointMap 
+                       lat={formData.lat} 
+                       lng={formData.lng} 
+                       onChange={(lat: number, lng: number) => {
+                         if (!isReadOnly("lat") && !isReadOnly("lng")) {
+                           setFormData({...formData, lat, lng});
+                         }
+                       }} 
+                    />
+                  )}
                </div>
             </div>
           ) : (
@@ -396,7 +492,7 @@ export default function PuntosCobroPage() {
                                           <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-300 group-focus-within:text-accent transition-colors" />
                                           <Input 
                                              type="text" 
-                                             className="h-9 pl-8 text-xs font-bold rounded-lg border-slate-200 focus:ring-accent text-right"
+                                             className="h-10 pl-8 text-xs font-medium rounded-lg border-slate-200 focus:ring-accent text-right text-slate-950 bg-white"
                                              placeholder="0"
                                              value={formatNumber(tarifasMatrix[key] || "")}
                                              onChange={(e) => updateTarifa(cat.mov_cat_id, fp.forma_pago_id, e.target.value)}
@@ -421,7 +517,10 @@ export default function PuntosCobroPage() {
           )}
 
           <div className="flex gap-3 pt-6 border-t border-slate-100">
-             <Button type="submit" className="flex-1 bg-accent text-white font-bold h-12 rounded-2xl shadow-lg flex gap-2 uppercase tracking-tighter"><Save className="h-4 w-4" /> Guardar Punto de Cobro</Button>
+             <Button type="submit" disabled={isSubmitting} className="flex-1 bg-accent text-white font-bold h-12 rounded-2xl shadow-lg flex gap-2 uppercase tracking-tighter transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-70 disabled:scale-100">
+               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+               {isSubmitting ? "Guardando..." : "Guardar Punto de Cobro"}
+             </Button>
              <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1 h-12 rounded-2xl font-bold uppercase tracking-tighter text-slate-500">Cancelar</Button>
           </div>
         </form>
@@ -432,7 +531,18 @@ export default function PuntosCobroPage() {
         onClose={() => setIsConfirmOpen(false)} 
         onConfirm={async () => {
           if (!itemToDelete) return;
-          const res = await fetch(`/api/puntos-cobro/${itemToDelete.pun_cob_id}`, { method: "DELETE" });
+          const userJson = localStorage.getItem("user");
+          const user = userJson ? JSON.parse(userJson) : null;
+          const tenantId = user?.tenantId || "public";
+
+          const res = await fetch(`/api/puntos-cobro/${itemToDelete.pun_cob_id}`, { 
+            method: "DELETE",
+            headers: {
+              "x-tenant-id": tenantId,
+              "x-user-email": user?.email || "",
+              "x-user-profile": user?.perfil_cod?.toString() || ""
+            }
+          });
           if (res.ok) { setIsConfirmOpen(false); showToast("Punto eliminado"); fetchData(); }
         }} 
         title="¿Eliminar Punto de Cobro?" 

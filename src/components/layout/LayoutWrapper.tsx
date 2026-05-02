@@ -9,21 +9,23 @@ export default function LayoutWrapper({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const isLoginPage = pathname === "/login";
+  const isLoginPage = pathname === "/login" || pathname === "/login-admin";
 
   if (isLoginPage) {
     return <>{children}</>;
   }
 
   return (
-    <div className="flex h-screen bg-[#f7fafe] overflow-hidden">
+    <div className="flex h-screen overflow-hidden">
       {/* Sidebar */}
       <Sidebar />
 
       {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto scroll-smooth">
-        {children}
-      </main>
+      <div className="flex-1 flex flex-col relative h-screen overflow-hidden">
+        <main className="flex-1 overflow-y-auto scroll-smooth custom-scrollbar p-4 md:p-8">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

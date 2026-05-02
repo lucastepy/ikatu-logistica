@@ -3,10 +3,11 @@ import { prisma } from "@/lib/db";
 
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = parseInt(params.id);
+    const { id: paramId } = await params;
+    const id = parseInt(paramId);
     const body = await request.json();
     const { nombre, direccion, telefono, estado } = body;
 
@@ -29,10 +30,11 @@ export async function PUT(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = parseInt(params.id);
+    const { id: paramId } = await params;
+    const id = parseInt(paramId);
     
     // Verificar si tiene usuarios dependientes
     const usuariosCount = await prisma.usuario.count({

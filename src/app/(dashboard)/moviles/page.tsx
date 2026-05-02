@@ -5,36 +5,33 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { CustomModal } from "@/components/ui/dialog-custom";
 import { ConfirmModal } from "@/components/ui/modal-confirm";
 import { 
-  Plus, 
-  Truck, 
-  Car, 
-  Box, 
-  Edit3, 
-  Trash2, 
-  CheckCircle2, 
-  Save, 
-  Search, 
-  ShieldCheck,
-  CreditCard,
-  User,
-  Zap,
-  Navigation
+  Plus, Edit3, Trash2, CheckCircle2, Save, Search, 
+  ShieldCheck, Box, Truck, CreditCard, Zap, Loader2
 } from "lucide-react";
-import { getLoggedUserEmail } from "@/lib/auth-utils";
+import { Badge } from "@/components/ui/badge";
+import { useFieldSecurity } from "@/hooks/useFieldSecurity";
 
 type MovilTab = "marca" | "modelo" | "movil";
 
 export default function MovilesPage() {
   const [activeTab, setActiveTab] = useState<MovilTab>("marca");
+  
+  const marcaSecurity = useFieldSecurity("MovilMarca");
+  const modeloSecurity = useFieldSecurity("MovilModelo");
+  const movilSecurity = useFieldSecurity("Movil");
+
+  const security = activeTab === "marca" ? marcaSecurity : activeTab === "modelo" ? modeloSecurity : movilSecurity;
+  const { isHidden, isReadOnly, loadingRestrictions } = security;
+
   const [data, setData] = useState<any[]>([]);
   const [marcas, setMarcas] = useState<any[]>([]);
   const [modelos, setModelos] = useState<any[]>([]);
   const [categorias, setCategorias] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   
@@ -69,21 +66,30 @@ export default function MovilesPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/moviles?type=${activeTab}`);
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+      const commonHeaders = {
+        "x-tenant-id": tenantId,
+        "x-user-email": user?.email || "",
+        "x-user-profile": user?.perfil_cod?.toString() || ""
+      };
+
+      const res = await fetch(`/api/admin/moviles?type=${activeTab}`, { headers: commonHeaders });
       const json = await res.json();
       setData(Array.isArray(json) ? json : []);
       setCurrentPage(1);
 
       // Cargar listas auxiliares
       const [rMarcas, rCategorias] = await Promise.all([
-        fetch("/api/admin/moviles?type=marca"),
-        fetch("/api/movil-categorias")
+        fetch("/api/admin/moviles?type=marca", { headers: commonHeaders }),
+        fetch("/api/movil-categorias", { headers: commonHeaders })
       ]);
       setMarcas(await rMarcas.json());
       setCategorias(await rCategorias.json());
 
       if (activeTab === "movil" || activeTab === "modelo") {
-         const rModelos = await fetch("/api/admin/moviles?type=modelo");
+         const rModelos = await fetch("/api/admin/moviles?type=modelo", { headers: commonHeaders });
          setModelos(await rModelos.json());
       }
     } catch (e) {
@@ -110,15 +116,15 @@ export default function MovilesPage() {
   const openEdit = (item: any) => {
     setEditingItem(item);
     if (activeTab === "marca") {
-      setFormData({ ...formData, nombre: item.mov_mar_nombre, estado: item.mov_mar_estado });
+      setFormData({ ...formData, nombre: item.mov_mar_nombre || "", estado: item.mov_mar_estado });
     } else if (activeTab === "modelo") {
-      setFormData({ ...formData, nombre: item.mov_mod_nombre, marcaId: item.mov_mod_marca_id.toString(), estado: item.mov_mod_estado });
+      setFormData({ ...formData, nombre: item.mov_mod_nombre || "", marcaId: item.mov_mod_marca_id.toString(), estado: item.mov_mod_estado });
     } else {
       setFormData({
         nombre: "",
-        chapa: item.movil_chapa,
-        marcaId: item.movil_marca_id.toString(),
-        modeloId: item.movil_modelo_id.toString(),
+        chapa: item.movil_chapa || "",
+        marcaId: item.movil_marca_id?.toString() || "",
+        modeloId: item.movil_modelo_id?.toString() || "",
         catId: item.movil_cat_id?.toString() || "",
         anho: item.movil_anho?.toString() || "",
         tipo: item.movil_tipo || "",
@@ -134,25 +140,41 @@ export default function MovilesPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const id = activeTab === "marca" ? editingItem?.mov_mar_id : activeTab === "modelo" ? editingItem?.mov_mod_id : editingItem?.movil_id;
-    const method = editingItem ? "PUT" : "POST";
-    const url = editingItem ? `/api/admin/moviles/${id}` : "/api/admin/moviles";
+    setIsSubmitting(true);
+    try {
+      const id = activeTab === "marca" ? editingItem?.mov_mar_id : activeTab === "modelo" ? editingItem?.mov_mod_id : editingItem?.movil_id;
+      const method = editingItem ? "PUT" : "POST";
+      const url = editingItem ? `/api/admin/moviles/${id}` : "/api/admin/moviles";
 
-    const usuarioEmail = getLoggedUserEmail();
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+      const usuarioEmail = user?.email || "";
 
-    const res = await fetch(url, {
-      method,
-      body: JSON.stringify({ type: activeTab, data: { ...formData, usuario: usuarioEmail } }),
-      headers: { "Content-Type": "application/json" }
-    });
+      const res = await fetch(url, {
+        method,
+        body: JSON.stringify({ type: activeTab, data: { ...formData, usuario: usuarioEmail } }),
+        headers: { 
+          "Content-Type": "application/json",
+          "x-tenant-id": tenantId,
+          "x-user-email": usuarioEmail,
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        }
+      });
 
-    if (res.ok) {
-      setIsModalOpen(false);
-      showToast(editingItem ? "Registro actualizado" : "Registro creado");
-      fetchData();
-    } else {
-      const err = await res.json();
-      showToast(err.error || "Error al procesar");
+      if (res.ok) {
+        setIsModalOpen(false);
+        showToast(editingItem ? "Registro actualizado" : "Registro creado");
+        fetchData();
+      } else {
+        const err = await res.json();
+        showToast(err.error || "Error al procesar");
+      }
+    } catch (e) {
+      console.error(e);
+      showToast("Error de conexión");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -164,7 +186,19 @@ export default function MovilesPage() {
   const onConfirmDelete = async () => {
     if (!itemToDelete) return;
     const id = activeTab === "marca" ? itemToDelete.mov_mar_id : activeTab === "modelo" ? itemToDelete.mov_mod_id : itemToDelete.movil_id;
-    const res = await fetch(`/api/admin/moviles/${id}?type=${activeTab}`, { method: "DELETE" });
+    
+    const userJson = localStorage.getItem("user");
+    const user = userJson ? JSON.parse(userJson) : null;
+    const tenantId = user?.tenantId || "public";
+
+    const res = await fetch(`/api/admin/moviles/${id}?type=${activeTab}`, { 
+      method: "DELETE",
+      headers: {
+        "x-tenant-id": tenantId,
+        "x-user-email": user?.email || "",
+        "x-user-profile": user?.perfil_cod?.toString() || ""
+      }
+    });
     if (res.ok) {
       setIsConfirmOpen(false);
       showToast("Registro eliminado");
@@ -193,6 +227,10 @@ export default function MovilesPage() {
     { id: "modelo", label: "Modelos", icon: Box },
     { id: "movil", label: "Móviles", icon: Truck }
   ] as const;
+
+  if (loadingRestrictions && loading) {
+    return <div className="h-screen flex items-center justify-center text-slate-400 font-bold uppercase tracking-widest animate-pulse">Sincronizando Seguridad...</div>;
+  }
 
   return (
     <div className="p-8 space-y-6 relative animate-in fade-in duration-500">
@@ -225,7 +263,7 @@ export default function MovilesPage() {
         {tabs.map(tab => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => { setActiveTab(tab.id); setCurrentPage(1); }}
             className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold text-[13px] transition-all ${
               activeTab === tab.id ? "bg-white text-accent shadow-sm border border-slate-200" : "text-slate-400 hover:text-slate-600"
             }`}
@@ -265,9 +303,9 @@ export default function MovilesPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
-                  <tr><td colSpan={5} className="px-8 py-10 text-center text-slate-400 italic">Cargando catálogo...</td></tr>
+                  <tr><td colSpan={6} className="px-8 py-10 text-center text-slate-400 italic">Cargando catálogo...</td></tr>
                 ) : currentItems.length === 0 ? (
-                  <tr><td colSpan={5} className="px-8 py-10 text-center text-slate-400 italic">No hay registros disponibles.</td></tr>
+                  <tr><td colSpan={6} className="px-8 py-10 text-center text-slate-400 italic">No hay registros disponibles.</td></tr>
                 ) : currentItems.map((item) => {
                   const id = item.mov_mar_id || item.mov_mod_id || item.movil_id;
                   const estado = item.mov_mar_estado || item.mov_mod_estado || item.movil_estado;
@@ -282,13 +320,15 @@ export default function MovilesPage() {
                           </div>
                           <div>
                             <p className="font-bold text-slate-700 text-sm">
-                              {item.mov_mar_nombre || item.mov_mod_nombre || `${item.marca?.mov_mar_nombre} ${item.modelo?.mov_mod_nombre}`}
+                              {activeTab === "marca" ? (!isHidden("mov_mar_nombre") && item.mov_mar_nombre) : 
+                               activeTab === "modelo" ? (!isHidden("mov_mod_nombre") && item.mov_mod_nombre) : 
+                               (`${item.marca?.mov_mar_nombre} ${item.modelo?.mov_mod_nombre}`)}
                             </p>
-                            {activeTab === "modelo" && <p className="text-[10px] text-muted font-medium uppercase tracking-tighter">Marca: {item.marca?.mov_mar_nombre}</p>}
+                            {activeTab === "modelo" && !isHidden("mov_mod_marca_id") && <p className="text-[10px] text-muted font-medium uppercase tracking-tighter">Marca: {item.marca?.mov_mar_nombre}</p>}
                             {activeTab === "movil" && (
                               <div className="flex gap-2">
-                                <p className="text-[10px] text-muted font-medium uppercase tracking-tighter">{item.movil_tipo} - Año {item.movil_anho}</p>
-                                {item.categoria && <Badge variant="outline" className="text-[9px] h-3.5 bg-slate-100 border-slate-200 text-slate-500 font-bold">{item.categoria.mov_cat_dsc}</Badge>}
+                                {!isHidden("movil_tipo") && !isHidden("movil_anho") && <p className="text-[10px] text-muted font-medium uppercase tracking-tighter">{item.movil_tipo} - Año {item.movil_anho}</p>}
+                                {item.categoria && !isHidden("movil_cat_id") && <Badge variant="outline" className="text-[9px] h-3.5 bg-slate-100 border-slate-200 text-slate-500 font-bold">{item.categoria.mov_cat_dsc}</Badge>}
                               </div>
                             )}
                           </div>
@@ -297,15 +337,21 @@ export default function MovilesPage() {
                       {activeTab === "movil" && (
                         <td className="px-8 py-4">
                            <div className="space-y-1">
-                              <div className="flex items-center gap-2 font-mono text-xs font-black text-slate-600 bg-slate-100 w-fit px-2 py-0.5 rounded border border-slate-200">
-                                <CreditCard className="h-3 w-3" /> {item.movil_chapa}
-                              </div>
-                              <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400">
-                                <Zap className="h-3 w-3" /> {item.movil_km_actual?.toLocaleString() || 0} KM
-                              </div>
-                              <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400">
-                                <Truck className="h-3 w-3 text-slate-300" /> {item.movil_capacidad_kg ? Number(item.movil_capacidad_kg).toLocaleString() : 0} KG
-                              </div>
+                              {!isHidden("movil_chapa") && (
+                                <div className="flex items-center gap-2 font-mono text-xs font-black text-slate-600 bg-slate-100 w-fit px-2 py-0.5 rounded border border-slate-200">
+                                  <CreditCard className="h-3 w-3" /> {item.movil_chapa}
+                                </div>
+                              )}
+                              {!isHidden("movil_km_actual") && (
+                                <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400">
+                                  <Zap className="h-3 w-3" /> {item.movil_km_actual?.toLocaleString() || 0} KM
+                                </div>
+                              )}
+                              {!isHidden("movil_capacidad_kg") && (
+                                <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400">
+                                  <Truck className="h-3 w-3 text-slate-300" /> {item.movil_capacidad_kg ? Number(item.movil_capacidad_kg).toLocaleString() : 0} KG
+                                </div>
+                              )}
                            </div>
                         </td>
                       )}
@@ -353,102 +399,145 @@ export default function MovilesPage() {
         </CardContent>
       </Card>
 
-      <CustomModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={`${editingItem ? 'Editar' : 'Nuevo/a'} ${tabs.find(t=>t.id===activeTab)?.label.slice(0,-1)}`}>
+      <CustomModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        title={`${editingItem ? 'Editar' : 'Nuevo/a'} ${tabs.find(t=>t.id===activeTab)?.label.slice(0,-1)}`}
+        className="max-w-2xl shadow-[0_50px_100px_-20px_rgba(0,0,0,0.3)] border-white/50 backdrop-blur-xl"
+      >
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
           {activeTab === "marca" && (
-            <div className="space-y-2"><Label>Nombre de la Marca</Label><Input value={formData.nombre} onChange={e => setFormData({...formData, nombre: e.target.value})} placeholder="Ej: Mercedes Benz, Scania..." required autoFocus /></div>
+            !isHidden("mov_mar_nombre") && (
+              <div className="space-y-2">
+                <Label>Nombre de la Marca</Label>
+                <Input value={formData.nombre} onChange={e => setFormData({...formData, nombre: e.target.value})} placeholder="Ej: Mercedes Benz, Scania..." className="h-12 border-slate-200 text-slate-950 font-medium bg-white shadow-sm" required autoFocus disabled={isReadOnly("mov_mar_nombre")} />
+              </div>
+            )
           )}
 
           {activeTab === "modelo" && (
             <>
-              <div className="space-y-2">
-                <Label>Marca</Label>
-                <select className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" value={formData.marcaId} onChange={e => setFormData({...formData, marcaId: e.target.value})} required autoFocus>
-                  <option value="">Seleccione marca...</option>
-                  {marcas.map(m => <option key={m.mov_mar_id} value={m.mov_mar_id}>{m.mov_mar_nombre}</option>)}
-                </select>
-              </div>
-              <div className="space-y-2"><Label>Nombre del Modelo</Label><Input value={formData.nombre} onChange={e => setFormData({...formData, nombre: e.target.value})} placeholder="Ej: Sprinter 515, Actros..." required /></div>
+              {!isHidden("mov_mod_marca_id") && (
+                <div className="space-y-2">
+                  <Label>Marca</Label>
+                  <select className="flex h-12 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-950 font-medium focus:ring-2 focus:ring-accent outline-none shadow-sm" value={formData.marcaId} onChange={e => setFormData({...formData, marcaId: e.target.value})} required autoFocus disabled={isReadOnly("mov_mod_marca_id")}>
+                    <option value="">Seleccione marca...</option>
+                    {marcas.map(m => <option key={m.mov_mar_id} value={m.mov_mar_id}>{m.mov_mar_nombre}</option>)}
+                  </select>
+                </div>
+              )}
+              {!isHidden("mov_mod_nombre") && (
+                <div className="space-y-2">
+                  <Label>Nombre del Modelo</Label>
+                  <Input value={formData.nombre} onChange={e => setFormData({...formData, nombre: e.target.value})} placeholder="Ej: Sprinter 515, Actros..." className="h-12 border-slate-200 text-slate-950 font-medium bg-white shadow-sm" required disabled={isReadOnly("mov_mod_nombre")} />
+                </div>
+              )}
             </>
           )}
 
           {activeTab === "movil" && (
             <div className="grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto px-1">
-              <div className="space-y-2 col-span-2">
-                 <Label>N° de Chapa (Matrícula)</Label>
-                 <Input 
-                   value={formData.chapa} 
-                   onChange={e => setFormData({...formData, chapa: e.target.value.toUpperCase()})} 
-                   placeholder="Ej: ABC 123" 
-                   className="uppercase font-mono font-bold"
-                   required 
-                   autoFocus
-                 />
-              </div>
-              <div className="space-y-2">
-                <Label>Marca</Label>
-                <select className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" value={formData.marcaId} onChange={e => {setFormData({...formData, marcaId: e.target.value, modeloId: ""});}} required>
-                  <option value="">Marca...</option>
-                  {marcas.map(m => <option key={m.mov_mar_id} value={m.mov_mar_id}>{m.mov_mar_nombre}</option>)}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <Label>Modelo</Label>
-                <select className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" value={formData.modeloId} onChange={e => setFormData({...formData, modeloId: e.target.value})} required disabled={!formData.marcaId}>
-                  <option value="">Modelo...</option>
-                  {modelos.filter(m => m.mov_mod_marca_id === parseInt(formData.marcaId)).map(m => <option key={m.mov_mod_id} value={m.mov_mod_id}>{m.mov_mod_nombre}</option>)}
-                </select>
-              </div>
-              <div className="space-y-2 col-span-2">
-                <Label>Categoría de Móvil</Label>
-                <select className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" value={formData.catId} onChange={e => setFormData({...formData, catId: e.target.value})} required>
-                  <option value="">Seleccione categoría...</option>
-                  {categorias.map(c => <option key={c.mov_cat_id} value={c.mov_cat_id}>{c.mov_cat_dsc}</option>)}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <Label>Tipo de Vehículo</Label>
-                <Input value={formData.tipo} onChange={e => setFormData({...formData, tipo: e.target.value})} placeholder="Ej: Camión, Furgón..." />
-              </div>
-              <div className="space-y-2">
-                <Label>Año</Label>
-                <Input type="number" value={formData.anho} onChange={e => setFormData({...formData, anho: e.target.value})} placeholder="2023" />
-              </div>
-              <div className="space-y-2">
-                <Label className="flex justify-between">Capacidad (Kg) <span className="text-[10px] text-accent font-black">{formData.capacidad ? Number(formData.capacidad).toLocaleString('es-PY') : 0} KG</span></Label>
-                <Input type="number" step="0.01" value={formData.capacidad} onChange={e => setFormData({...formData, capacidad: e.target.value})} placeholder="5000.00" />
-              </div>
-              <div className="space-y-2">
-                <Label className="flex justify-between">Km Actual <span className="text-[10px] text-accent font-black">{formData.kmActual ? Number(formData.kmActual).toLocaleString('es-PY') : 0} KM</span></Label>
-                <Input type="number" value={formData.kmActual} onChange={e => setFormData({...formData, kmActual: e.target.value})} placeholder="0" />
-              </div>
-              <div className="space-y-2">
-                <Label>Vto. Seguro</Label>
-                <Input type="date" value={formData.vtoSeguro} onChange={e => setFormData({...formData, vtoSeguro: e.target.value})} />
-              </div>
-              <div className="space-y-2">
-                <Label>Vto. Habilitación</Label>
-                <Input type="date" value={formData.vtoHabilitacion} onChange={e => setFormData({...formData, vtoHabilitacion: e.target.value})} />
-              </div>
+              {!isHidden("movil_chapa") && (
+                <div className="space-y-2 col-span-2">
+                   <Label>N° de Chapa (Matrícula)</Label>
+                   <Input 
+                     value={formData.chapa} 
+                     onChange={e => setFormData({...formData, chapa: e.target.value.toUpperCase()})} 
+                     placeholder="Ej: ABC 123" 
+                     className="h-12 border-slate-200 text-slate-950 font-medium bg-white shadow-sm uppercase font-mono"
+                     required 
+                     autoFocus
+                     disabled={isReadOnly("movil_chapa")}
+                   />
+                </div>
+              )}
+              {!isHidden("movil_marca_id") && (
+                <div className="space-y-2">
+                  <Label>Marca</Label>
+                  <select className="flex h-12 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-950 font-medium focus:ring-2 focus:ring-accent outline-none shadow-sm" value={formData.marcaId} onChange={e => {setFormData({...formData, marcaId: e.target.value, modeloId: ""});}} required disabled={isReadOnly("movil_marca_id")}>
+                    <option value="">Marca...</option>
+                    {marcas.map(m => <option key={m.mov_mar_id} value={m.mov_mar_id}>{m.mov_mar_nombre}</option>)}
+                  </select>
+                </div>
+              )}
+              {!isHidden("movil_modelo_id") && (
+                <div className="space-y-2">
+                  <Label>Modelo</Label>
+                  <select className="flex h-12 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-950 font-medium focus:ring-2 focus:ring-accent outline-none shadow-sm" value={formData.modeloId} onChange={e => setFormData({...formData, modeloId: e.target.value})} required disabled={!formData.marcaId || isReadOnly("movil_modelo_id")}>
+                    <option value="">Modelo...</option>
+                    {modelos.filter(m => m.mov_mod_marca_id === parseInt(formData.marcaId)).map(m => <option key={m.mov_mod_id} value={m.mov_mod_id}>{m.mov_mod_nombre}</option>)}
+                  </select>
+                </div>
+              )}
+              {!isHidden("movil_cat_id") && (
+                <div className="space-y-2 col-span-2">
+                  <Label>Categoría de Móvil</Label>
+                  <select className="flex h-12 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-950 font-medium focus:ring-2 focus:ring-accent outline-none shadow-sm" value={formData.catId} onChange={e => setFormData({...formData, catId: e.target.value})} required disabled={isReadOnly("movil_cat_id")}>
+                    <option value="">Seleccione categoría...</option>
+                    {categorias.map(c => <option key={c.mov_cat_id} value={c.mov_cat_id}>{c.mov_cat_dsc}</option>)}
+                  </select>
+                </div>
+              )}
+              {!isHidden("movil_tipo") && (
+                <div className="space-y-2">
+                  <Label>Tipo de Vehículo</Label>
+                  <Input value={formData.tipo} onChange={e => setFormData({...formData, tipo: e.target.value})} placeholder="Ej: Camión, Furgón..." className="h-12 border-slate-200 text-slate-950 font-medium bg-white shadow-sm" disabled={isReadOnly("movil_tipo")} />
+                </div>
+              )}
+              {!isHidden("movil_anho") && (
+                <div className="space-y-2">
+                  <Label>Año</Label>
+                  <Input type="number" value={formData.anho} onChange={e => setFormData({...formData, anho: e.target.value})} placeholder="2023" className="h-12 border-slate-200 text-slate-950 font-medium bg-white shadow-sm" disabled={isReadOnly("movil_anho")} />
+                </div>
+              )}
+              {!isHidden("movil_capacidad_kg") && (
+                <div className="space-y-2">
+                  <Label className="flex justify-between">Capacidad (Kg) <span className="text-[10px] text-accent font-black">{formData.capacidad ? Number(formData.capacidad).toLocaleString('es-PY') : 0} KG</span></Label>
+                  <Input type="number" step="0.01" value={formData.capacidad} onChange={e => setFormData({...formData, capacidad: e.target.value})} placeholder="5000.00" className="h-12 border-slate-200 text-slate-950 font-medium bg-white shadow-sm" disabled={isReadOnly("movil_capacidad_kg")} />
+                </div>
+              )}
+              {!isHidden("movil_km_actual") && (
+                <div className="space-y-2">
+                  <Label className="flex justify-between">Km Actual <span className="text-[10px] text-accent font-black">{formData.kmActual ? Number(formData.kmActual).toLocaleString('es-PY') : 0} KM</span></Label>
+                  <Input type="number" value={formData.kmActual} onChange={e => setFormData({...formData, kmActual: e.target.value})} placeholder="0" className="h-12 border-slate-200 text-slate-950 font-medium bg-white shadow-sm" disabled={isReadOnly("movil_km_actual")} />
+                </div>
+              )}
+              {!isHidden("movil_vto_seguro") && (
+                <div className="space-y-2">
+                  <Label>Vto. Seguro</Label>
+                  <Input type="date" value={formData.vtoSeguro} onChange={e => setFormData({...formData, vtoSeguro: e.target.value})} className="h-12 border-slate-200 text-slate-950 font-medium bg-white shadow-sm" disabled={isReadOnly("movil_vto_seguro")} />
+                </div>
+              )}
+              {!isHidden("movil_vto_habilitacion") && (
+                <div className="space-y-2">
+                  <Label>Vto. Habilitación</Label>
+                  <Input type="date" value={formData.vtoHabilitacion} onChange={e => setFormData({...formData, vtoHabilitacion: e.target.value})} className="h-12 border-slate-200 text-slate-950 font-medium bg-white shadow-sm" disabled={isReadOnly("movil_vto_habilitacion")} />
+                </div>
+              )}
             </div>
           )}
 
-          <div className="space-y-2">
-            <Label>Estado</Label>
-            <select 
-              className={`flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ${!editingItem ? 'bg-slate-50 opacity-70 cursor-not-allowed' : ''}`} 
-              value={formData.estado} 
-              onChange={e => setFormData({...formData, estado: e.target.value})}
-              disabled={!editingItem}
-            >
-              <option value="A">Activo</option>
-              <option value="I">Inactivo</option>
-            </select>
-            {!editingItem && <p className="text-[10px] text-muted italic font-medium">Los nuevos registros se crean en estado Activo por defecto.</p>}
-          </div>
+          {!isHidden(activeTab === "marca" ? "mov_mar_estado" : activeTab === "modelo" ? "mov_mod_estado" : "movil_estado") && (
+            <div className="space-y-2">
+              <Label>Estado</Label>
+              <select 
+                className={`flex h-12 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-950 font-medium focus:ring-2 focus:ring-accent outline-none shadow-sm ${!editingItem ? 'bg-slate-50 opacity-70 cursor-not-allowed' : ''}`} 
+                value={formData.estado} 
+                onChange={e => setFormData({...formData, estado: e.target.value})}
+                disabled={!editingItem || isReadOnly(activeTab === "marca" ? "mov_mar_estado" : activeTab === "modelo" ? "mov_mod_estado" : "movil_estado")}
+              >
+                <option value="A">Activo</option>
+                <option value="I">Inactivo</option>
+              </select>
+              {!editingItem && <p className="text-[10px] text-muted italic font-medium">Los nuevos registros se crean en estado Activo por defecto.</p>}
+            </div>
+          )}
 
           <div className="flex gap-4 pt-6">
-            <Button type="submit" className="flex-1 bg-accent text-white font-bold h-12 rounded-2xl shadow-lg shadow-accent/20 flex gap-2 uppercase tracking-tighter"><Save className="h-4 w-4" /> Guardar Registro</Button>
+            <Button type="submit" disabled={isSubmitting} className="flex-1 bg-accent text-white font-bold h-12 rounded-2xl shadow-lg shadow-accent/20 flex gap-2 uppercase tracking-tighter transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-70 disabled:scale-100">
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {isSubmitting ? "Guardando..." : "Guardar Registro"}
+            </Button>
             <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1 h-12 rounded-2xl font-bold uppercase tracking-tighter text-slate-500">Cancelar</Button>
           </div>
         </form>

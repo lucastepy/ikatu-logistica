@@ -62,9 +62,9 @@ export default function Dashboard() {
             <CardTitle className="text-xl font-bold">Acceso Rápido</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4">
-            <ShortcutLink href="/sucursales" title="Gestionar Sucursales" />
-            <ShortcutLink href="/usuarios" title="Directorio de Usuarios" />
-            <ShortcutLink href="/parametros" title="Parámetros del Sistema" />
+            <ShortcutLink href="/admin/empresa" title="Gestionar Clientes SaaS" />
+            <ShortcutLink href="/admin/users" title="Directorio de Usuarios" />
+            <ShortcutLink href="/admin/parametros" title="Parámetros del Sistema" />
             <ShortcutLink href="/settings/password" title="Seguridad de Cuenta" />
           </CardContent>
         </Card>

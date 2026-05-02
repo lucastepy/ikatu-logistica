@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { getPrisma } from "@/lib/prisma";
+const prisma = getPrisma("tenant_la_transportadora");
 
 export async function GET(request: Request) {
   try {
@@ -19,8 +20,8 @@ export async function GET(request: Request) {
           c.per_ent_nombre as chofer_nombre,
           a.per_ent_nombre as ayudante_nombre,
           COALESCE(fe.flu_est_nom, v.via_estado) as via_estado_nombre,
-          ST_X(d.deposito_geo::geometry) as dep_lng,
-          ST_Y(d.deposito_geo::geometry) as dep_lat
+          public.ST_X(d.deposito_geo::public.geometry) as dep_lng,
+          public.ST_Y(d.deposito_geo::public.geometry) as dep_lat
         FROM viajes v
         LEFT JOIN moviles m ON v.via_movil_id = m.movil_id
         LEFT JOIN movil_marcas mar ON m.movil_marca_id = mar.mov_mar_id
@@ -45,8 +46,8 @@ export async function GET(request: Request) {
           a.per_ent_nombre as ayudante_nombre,
           d.deposito_nombre,
           COALESCE(fe.flu_est_nom, v.via_estado) as via_estado_nombre,
-          ST_X(d.deposito_geo::geometry) as dep_lng,
-          ST_Y(d.deposito_geo::geometry) as dep_lat
+          public.ST_X(d.deposito_geo::public.geometry) as dep_lng,
+          public.ST_Y(d.deposito_geo::public.geometry) as dep_lat
         FROM viajes v
         LEFT JOIN moviles m ON v.via_movil_id = m.movil_id
         LEFT JOIN movil_marcas mar ON m.movil_marca_id = mar.mov_mar_id
@@ -66,22 +67,10 @@ export async function GET(request: Request) {
     const viaIds = viajesRaw.map(v => v.via_id);
 
     // 2. Consulta masiva de Destinos (Zonas)
-    const zonasDestino: any[] = await prisma.$queryRaw`
-      SELECT vz.vz_via_id, z.zon_id, z.zon_nombre, 
-             ST_X(ST_Centroid(z.zon_poligono::geometry)) as lng, 
-             ST_Y(ST_Centroid(z.zon_poligono::geometry)) as lat
-      FROM viaje_zonas vz
-      JOIN zonas z ON vz.vz_zon_id = z.zon_id
-      WHERE vz.vz_via_id IN (${viaIds.length > 0 ? viaIds[0] : -1}) -- Dummy if empty, though we checked length
-    `;
-    // Nota: Prisma queryRaw con IN es complejo, para simplificar y asegurar velocidad 
-    // lo haremos dinámico si hay muchos IDs o seguiremos una estrategia de batch.
-    // Por ahora, traemos todos los destinos de una vez usando un JOIN mejorado.
-
     const destinosZonas: any[] = await prisma.$queryRaw`
       SELECT vz.vz_via_id, z.zon_id, z.zon_nombre, 
-             ST_X(ST_Centroid(z.zon_poligono::geometry)) as lng, 
-             ST_Y(ST_Centroid(z.zon_poligono::geometry)) as lat
+             public.ST_X(public.ST_Centroid(z.zon_poligono::public.geometry)) as lng, 
+             public.ST_Y(public.ST_Centroid(z.zon_poligono::public.geometry)) as lat
       FROM viaje_zonas vz
       JOIN zonas z ON vz.vz_zon_id = z.zon_id
       WHERE vz.vz_via_id = ANY(${viaIds})
@@ -89,8 +78,8 @@ export async function GET(request: Request) {
 
     const destinosClientes: any[] = await prisma.$queryRaw`
       SELECT vc.vc_via_id, cli.cli_id, cli.cli_razon_social as zon_nombre, 
-             ST_X(dir.dir_geolocalizacion::geometry) as lng, 
-             ST_Y(dir.dir_geolocalizacion::geometry) as lat
+             public.ST_X(dir.dir_geolocalizacion::public.geometry) as lng, 
+             public.ST_Y(dir.dir_geolocalizacion::public.geometry) as lat
       FROM viaje_clientes vc
       JOIN clientes cli ON vc.vc_cli_id = cli.cli_id
       JOIN clientes_direcciones dir ON cli.cli_id = dir.cli_id

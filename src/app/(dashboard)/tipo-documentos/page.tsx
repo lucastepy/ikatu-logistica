@@ -8,24 +8,18 @@ import { Label } from "@/components/ui/label";
 import { CustomModal } from "@/components/ui/dialog-custom";
 import { ConfirmModal } from "@/components/ui/modal-confirm";
 import { 
-  Plus, 
-  Search, 
-  Edit3, 
-  Trash2, 
-  CheckCircle2, 
-  Save, 
-  FileText,
-  Hash,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight
+  Plus, Edit3, Trash2, CheckCircle2, Save, Search, 
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
+  Hash, FileText, Loader2
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { useFieldSecurity } from "@/hooks/useFieldSecurity";
 
 export default function TipoDocumentosPage() {
+  const { isHidden, isReadOnly, loadingRestrictions } = useFieldSecurity("TipoDocumento");
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   
@@ -50,12 +44,23 @@ export default function TipoDocumentosPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/tipo-documentos");
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+
+      const res = await fetch("/api/admin/tipo-documentos", {
+        headers: {
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        }
+      });
       const json = await res.json();
       setData(Array.isArray(json) ? json : []);
       setCurrentPage(1);
     } catch (e) {
       console.error(e);
+      setData([]);
     } finally {
       setLoading(false);
     }
@@ -79,27 +84,40 @@ export default function TipoDocumentosPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const method = editingItem ? "PUT" : "POST";
-    const url = editingItem ? `/api/admin/tipo-documentos/${editingItem.tip_doc_id}` : "/api/admin/tipo-documentos";
+    setIsSubmitting(true);
+    try {
+      const method = editingItem ? "PUT" : "POST";
+      const url = editingItem ? `/api/admin/tipo-documentos/${editingItem.tip_doc_id}` : "/api/admin/tipo-documentos";
 
-    // Obtener el usuario logueado
-    const userJson = localStorage.getItem("user");
-    const user = userJson ? JSON.parse(userJson) : null;
-    const usuarioPk = user?.id?.toString() || "SISTEMA";
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+      const usuarioPk = user?.id?.toString() || "SISTEMA";
 
-    const res = await fetch(url, {
-      method,
-      body: JSON.stringify({ ...formData, usuario: usuarioPk }),
-      headers: { "Content-Type": "application/json" }
-    });
+      const res = await fetch(url, {
+        method,
+        body: JSON.stringify({ ...formData, usuario: usuarioPk }),
+        headers: { 
+          "Content-Type": "application/json",
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        }
+      });
 
-    if (res.ok) {
-      setIsModalOpen(false);
-      showToast(editingItem ? "Registro actualizado" : "Registro creado");
-      fetchData();
-    } else {
-      const err = await res.json();
-      showToast(err.error || "Error al procesar");
+      if (res.ok) {
+        setIsModalOpen(false);
+        showToast(editingItem ? "Registro actualizado" : "Registro creado");
+        fetchData();
+      } else {
+        const err = await res.json();
+        showToast(err.error || "Error al procesar");
+      }
+    } catch (e) {
+      console.error(e);
+      showToast("Error de conexión");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -110,7 +128,18 @@ export default function TipoDocumentosPage() {
 
   const onConfirmDelete = async () => {
     if (!itemToDelete) return;
-    const res = await fetch(`/api/admin/tipo-documentos/${itemToDelete.tip_doc_id}`, { method: "DELETE" });
+    const userJson = localStorage.getItem("user");
+    const user = userJson ? JSON.parse(userJson) : null;
+    const tenantId = user?.tenantId || "public";
+
+    const res = await fetch(`/api/admin/tipo-documentos/${itemToDelete.tip_doc_id}`, { 
+      method: "DELETE",
+      headers: {
+        "x-tenant-id": tenantId,
+        "x-user-email": user?.email || "",
+        "x-user-profile": user?.perfil_cod?.toString() || ""
+      }
+    });
     if (res.ok) {
       setIsConfirmOpen(false);
       showToast("Registro eliminado");
@@ -121,13 +150,17 @@ export default function TipoDocumentosPage() {
     }
   };
 
-  const filteredData = data.filter(item => 
-    item.tip_doc_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.tip_doc_dsc.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredData = data.filter((item: any) => 
+    (item.tip_doc_id || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (item.tip_doc_dsc || "").toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
   const currentItems = filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  if (loadingRestrictions && loading) {
+    return <div className="h-screen flex items-center justify-center text-slate-400 font-bold uppercase tracking-widest animate-pulse">Sincronizando Seguridad...</div>;
+  }
 
   return (
     <div className="p-8 space-y-6 relative animate-in fade-in duration-500">
@@ -170,8 +203,8 @@ export default function TipoDocumentosPage() {
             <table className="w-full text-left">
               <thead>
                 <tr className="bg-slate-50/80 border-b border-slate-100 text-[11px] tracking-tight text-slate-400 font-bold uppercase">
-                  <th className="px-8 py-4 w-32 text-center">Código (ID)</th>
-                  <th className="px-8 py-4">Descripción del Documento</th>
+                  {!isHidden("tip_doc_id") && <th className="px-8 py-4 w-32 text-center">Código (ID)</th>}
+                  {!isHidden("tip_doc_dsc") && <th className="px-8 py-4">Descripción del Documento</th>}
                   <th className="px-8 py-4 text-right">Acciones</th>
                 </tr>
               </thead>
@@ -182,17 +215,21 @@ export default function TipoDocumentosPage() {
                   <tr><td colSpan={3} className="px-8 py-10 text-center text-slate-400 italic">No se encontraron registros.</td></tr>
                 ) : currentItems.map((item) => (
                   <tr key={item.tip_doc_id} className="hover:bg-slate-50/30 transition-colors group">
-                    <td className="px-8 py-4 font-mono text-[11px] text-accent font-black text-center">
-                       <span className="bg-accent/5 px-3 py-1 rounded-lg border border-accent/10">{item.tip_doc_id}</span>
-                    </td>
-                    <td className="px-8 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl bg-slate-100 text-slate-400 group-hover:text-accent transition-colors">
-                          <FileText className="h-4 w-4" />
+                    {!isHidden("tip_doc_id") && (
+                      <td className="px-8 py-4 font-mono text-[11px] text-accent font-black text-center">
+                        <span className="bg-accent/5 px-3 py-1 rounded-lg border border-accent/10">{item.tip_doc_id}</span>
+                      </td>
+                    )}
+                    {!isHidden("tip_doc_dsc") && (
+                      <td className="px-8 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-xl bg-slate-100 text-slate-400 group-hover:text-accent transition-colors">
+                            <FileText className="h-4 w-4" />
+                          </div>
+                          <p className="font-bold text-slate-700 text-sm tracking-tight">{item.tip_doc_dsc}</p>
                         </div>
-                        <p className="font-bold text-slate-700 text-sm tracking-tight">{item.tip_doc_dsc}</p>
-                      </div>
-                    </td>
+                      </td>
+                    )}
                     <td className="px-8 py-4 text-right">
                       <div className="flex justify-end gap-2">
                          <Button onClick={() => openEdit(item)} variant="outline" size="sm" className="h-8 gap-2 border-slate-200 hover:bg-slate-50 transition-all px-3 font-bold text-xs shadow-sm text-slate-600">
@@ -234,41 +271,62 @@ export default function TipoDocumentosPage() {
         </CardContent>
       </Card>
 
-      <CustomModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={`${editingItem ? 'Editar' : 'Nuevo'} Tipo de Documento`}>
+      <CustomModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        title={`${editingItem ? 'Editar' : 'Nuevo'} Tipo de Documento`}
+        className="max-w-md shadow-[0_50px_100px_-20px_rgba(0,0,0,0.3)] border-white/50 backdrop-blur-xl"
+      >
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2">Código (ID) <Hash className="h-3 w-3 text-slate-300" /></Label>
-            <Input 
-              value={formData.id} 
-              onChange={e => setFormData({...formData, id: e.target.value.toUpperCase().slice(0, 3)})} 
-              placeholder="Ej: CI, PAS, RUC..." 
-              required 
-              disabled={!!editingItem}
-              autoFocus={!editingItem}
-              className="font-mono font-bold uppercase tracking-widest"
-            />
-            <p className="text-[10px] text-muted italic font-medium">Máximo 3 caracteres (ej: CIN, DNI).</p>
-          </div>
+          {!isHidden("tip_doc_id") && (
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2 text-slate-700 font-bold">Código (ID) <Hash className="h-3 w-3 text-accent" /></Label>
+              <Input 
+                value={formData.id} 
+                onChange={e => setFormData({...formData, id: e.target.value.toUpperCase().slice(0, 3)})} 
+                placeholder="Ej: CI, PAS, RUC..." 
+                required 
+                disabled={!!editingItem || isReadOnly("tip_doc_id")}
+                autoFocus={!editingItem}
+                className="h-11 font-mono font-bold uppercase tracking-widest bg-white border-slate-200 text-slate-950"
+              />
+              <p className="text-[10px] text-muted italic font-medium">Máximo 3 caracteres (ej: CIN, DNI).</p>
+            </div>
+          )}
           
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2">Descripción <FileText className="h-3 w-3 text-slate-300" /></Label>
-            <Input 
-              value={formData.dsc} 
-              onChange={e => setFormData({...formData, dsc: e.target.value})} 
-              placeholder="Ej: Cédula de Identidad" 
-              required 
-              autoFocus={!!editingItem}
-            />
-          </div>
+          {!isHidden("tip_doc_dsc") && (
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2 text-slate-700 font-bold">Descripción <FileText className="h-3 w-3 text-accent" /></Label>
+              <Input 
+                value={formData.dsc} 
+                onChange={e => setFormData({...formData, dsc: e.target.value})} 
+                placeholder="Ej: Cédula de Identidad" 
+                required 
+                disabled={isReadOnly("tip_doc_dsc")}
+                autoFocus={!!editingItem}
+                className="h-11 bg-white border-slate-200 text-slate-950 font-medium shadow-sm"
+              />
+            </div>
+          )}
 
           <div className="flex gap-4 pt-6">
-            <Button type="submit" className="flex-1 bg-accent text-white font-bold h-12 rounded-2xl shadow-lg shadow-accent/20 flex gap-2 uppercase tracking-tighter transition-all hover:scale-[1.02] active:scale-95"><Save className="h-4 w-4" /> Guardar Registro</Button>
-            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1 h-12 rounded-2xl font-bold uppercase tracking-tighter text-slate-500">Cancelar</Button>
+            <Button type="submit" disabled={isSubmitting} className="flex-1 bg-accent text-white font-bold h-12 rounded-2xl shadow-lg shadow-accent/20 flex gap-2 uppercase tracking-tighter transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-70 disabled:scale-100">
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {isSubmitting ? "Guardando..." : "Guardar Registro"}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1 h-12 rounded-2xl font-bold uppercase tracking-tighter text-slate-500 border-slate-200">Cancelar</Button>
           </div>
         </form>
       </CustomModal>
 
-      <ConfirmModal isOpen={isConfirmOpen} onClose={() => setIsConfirmOpen(false)} onConfirm={onConfirmDelete} title="¿Eliminar Tipo de Documento?" description="Esta acción es permanente. No se podrá eliminar si existen registros que utilicen este tipo de documento." />
+      <ConfirmModal 
+        isOpen={isConfirmOpen} 
+        onClose={() => setIsConfirmOpen(false)} 
+        onConfirm={onConfirmDelete} 
+        title="¿Eliminar Tipo de Documento?" 
+        description="Esta acción es permanente. No se podrá eliminar si existen registros que utilicen este tipo de documento." 
+        variant="light"
+      />
     </div>
   );
 }

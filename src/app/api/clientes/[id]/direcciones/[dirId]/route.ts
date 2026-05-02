@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { getPrisma } from "@/lib/prisma";
+const prisma = getPrisma("tenant_la_transportadora");
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string, dirId: string }> }) {
   try {
@@ -20,7 +21,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         dir_calle_principal = ${calle},
         dir_nro_casa = ${nroCasa},
         dir_referencia = ${referencia},
-        dir_geolocalizacion = ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326),
+        dir_geolocalizacion = public.ST_SetSRID(public.ST_MakePoint(${lng}, ${lat}), 4326),
         dir_foto_url = ${fotoUrl},
         dir_foto_descripcion = ${fotoDsc}
       WHERE dir_id = ${dirId}::uuid

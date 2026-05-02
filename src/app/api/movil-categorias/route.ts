@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { getPrisma, prismaPublic } from "@/lib/prisma";
+const prisma = getPrisma("tenant_la_transportadora");
 
 export async function GET() {
   try {
@@ -9,12 +10,12 @@ export async function GET() {
 
     // Obtener todos los emails únicos de auditoría
     const emails = Array.from(new Set([
-      ...data.map(i => i.usuario_alta),
-      ...data.map(i => i.usuario_mod)
-    ].filter(Boolean)));
+      ...data.map((i: any) => i.usuario_alta),
+      ...data.map((i: any) => i.usuario_mod)
+    ].filter((e): e is string => Boolean(e))));
 
     // Buscar los nombres de esos usuarios
-    const users = await prisma.usuario.findMany({
+    const users = await prismaPublic.usuario.findMany({
       where: { usuario_email: { in: emails as string[] } },
       select: { usuario_email: true, usuario_nombre: true }
     });

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { getPrisma } from "@/lib/prisma";
+const prisma = getPrisma("tenant_la_transportadora");
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -11,8 +12,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         dir_bar_cod,
         zon_id, dir_calle_principal, dir_nro_casa, dir_referencia,
         dir_foto_url, dir_foto_descripcion,
-        ST_X(dir_geolocalizacion::geometry) as lng,
-        ST_Y(dir_geolocalizacion::geometry) as lat
+        public.ST_X(dir_geolocalizacion::geometry) as lng,
+        public.ST_Y(dir_geolocalizacion::geometry) as lat
       FROM clientes_direcciones
       WHERE cli_id = ${id}::uuid
     `;
@@ -47,7 +48,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         ${nextId}::uuid, ${id}::uuid, ${telefono}, ${email},
         ${parseInt(barCod)},
         ${zonId ? parseInt(zonId) : null}, ${calle}, ${nroCasa}, ${referencia},
-        ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326),
+        public.ST_SetSRID(public.ST_MakePoint(${lng}, ${lat}), 4326),
         ${fotoUrl}, ${fotoDsc}
       )
     `;

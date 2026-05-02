@@ -11,7 +11,7 @@ export async function GET() {
         zon_color, 
         zon_usuario_alta, 
         zon_fecha_alta,
-        ST_AsGeoJSON(zon_poligono)::json as zon_poligono
+        public.ST_AsGeoJSON(zon_poligono)::json as zon_poligono
       FROM zonas
       ORDER BY zon_id ASC
     `;
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
           ${nombre}, 
           ${color || "#3498db"}, 
           ${usuario || "SISTEMA"}, 
-          ST_SetSRID(ST_GeomFromGeoJSON(${JSON.stringify(poligono)}), 4326)
+          public.ST_SetSRID(public.ST_GeomFromGeoJSON(${JSON.stringify(poligono)}), 4326)
         )
       `;
     } else {

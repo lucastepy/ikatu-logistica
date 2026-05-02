@@ -23,7 +23,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
-  ChevronsRight
+  ChevronsRight,
+  Loader2
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
@@ -38,6 +39,7 @@ interface Parametro {
 export default function ParametrosPage() {
   const [parametros, setParametros] = useState<Parametro[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -101,19 +103,29 @@ export default function ParametrosPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const method = editingItem ? "PUT" : "POST";
-    const url = editingItem ? `/api/admin/parametros/${editingItem.par_id}` : "/api/admin/parametros";
+    setIsSubmitting(true);
+    try {
+      const method = editingItem ? "PUT" : "POST";
+      const url = editingItem ? `/api/admin/parametros/${editingItem.par_id}` : "/api/admin/parametros";
 
-    const res = await fetch(url, {
-      method,
-      body: JSON.stringify(formData),
-      headers: { "Content-Type": "application/json" }
-    });
+      const res = await fetch(url, {
+        method,
+        body: JSON.stringify(formData),
+        headers: { "Content-Type": "application/json" }
+      });
 
-    if (res.ok) {
-      setIsModalOpen(false);
-      showToast(editingItem ? "Parámetro actualizado" : "Parámetro creado");
-      fetchData();
+      if (res.ok) {
+        setIsModalOpen(false);
+        showToast(editingItem ? "Parámetro actualizado" : "Parámetro creado");
+        fetchData();
+      } else {
+        showToast("Error al guardar parámetro");
+      }
+    } catch (e) {
+      console.error(e);
+      showToast("Error de conexión");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -147,8 +159,10 @@ export default function ParametrosPage() {
     <div className="p-8 space-y-8 animate-in fade-in duration-500 relative">
       {toast && (
         <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[200] animate-in slide-in-from-top-8 duration-300">
-          <div className="bg-slate-900 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 border border-slate-700/50 backdrop-blur-xl bg-opacity-90">
-            <div className="bg-emerald-500 p-1 rounded-full text-white"><CheckCircle2 className="h-4 w-4" /></div>
+          <div className="bg-white/80 backdrop-blur-xl text-slate-600 px-8 py-4 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex items-center gap-4 border border-white/50 ring-1 ring-slate-100">
+            <div className="bg-emerald-500/10 p-2 rounded-xl">
+              <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+            </div>
             <span className="font-bold text-sm tracking-tight">{toast}</span>
           </div>
         </div>
@@ -264,7 +278,12 @@ export default function ParametrosPage() {
         </CardContent>
       </Card>
 
-      <CustomModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingItem ? "Editar Parámetro" : "Nuevo Parámetro"}>
+      <CustomModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        title={editingItem ? "Editar Parámetro" : "Nuevo Parámetro"}
+        className="max-w-xl shadow-[0_50px_100px_-20px_rgba(0,0,0,0.3)] border-white/50 backdrop-blur-xl"
+      >
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
           <div className="space-y-2">
             <Label>Código del Parámetro</Label>
@@ -275,6 +294,7 @@ export default function ParametrosPage() {
               required 
               autoFocus
               disabled={!!editingItem} // El código suele ser el identificador de negocio
+              className="h-12 border-slate-200 text-slate-950 font-medium bg-white shadow-sm"
             />
           </div>
           <div className="space-y-2">
@@ -284,6 +304,7 @@ export default function ParametrosPage() {
               onChange={(e) => setFormData({...formData, descripcion: e.target.value})} 
               placeholder="Descripción breve de su función"
               required 
+              className="h-12 border-slate-200 text-slate-950 font-medium bg-white shadow-sm"
             />
           </div>
           <div className="space-y-2">
@@ -293,29 +314,28 @@ export default function ParametrosPage() {
               onChange={(e) => setFormData({...formData, valor: e.target.value})} 
               placeholder="Introduce el valor asignado"
               required 
+              className="h-12 border-slate-200 text-slate-950 font-medium bg-white shadow-sm"
             />
-          </div>
-          <div className="space-y-2">
-            <Label>ID de Tenant</Label>
-            <div className="relative">
-              <Input 
-                type="number"
-                value={formData.tenantId} 
-                onChange={(e) => setFormData({...formData, tenantId: e.target.value})} 
-                required 
-              />
-              <Hash className="absolute right-3 top-2.5 h-4 w-4 text-muted opacity-30" />
-            </div>
           </div>
 
           <div className="flex gap-3 pt-4">
-            <Button type="submit" className="flex-1 bg-accent text-white font-bold gap-2"><Save className="h-4 w-4" /> {editingItem ? "Actualizar" : "Guardar Parámetro"}</Button>
-            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1">Cancelar</Button>
+            <Button type="submit" disabled={isSubmitting} className="flex-1 bg-accent text-white font-bold gap-2 shadow-lg shadow-accent/20 hover:brightness-105 h-12 rounded-xl transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-70 disabled:scale-100 uppercase tracking-tighter">
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {isSubmitting ? "Guardando..." : (editingItem ? "Actualizar" : "Guardar Parámetro")}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1 border-slate-200">Cancelar</Button>
           </div>
         </form>
       </CustomModal>
 
-      <ConfirmModal isOpen={isConfirmOpen} onClose={() => setIsConfirmOpen(false)} onConfirm={onConfirmDelete} title="¿Eliminar Parámetro?" description="Si eliminas este parámetro, algunas funciones del sistema podrían dejar de operar correctamente." />
+      <ConfirmModal 
+        isOpen={isConfirmOpen} 
+        onClose={() => setIsConfirmOpen(false)} 
+        onConfirm={onConfirmDelete} 
+        title="¿Eliminar Parámetro?" 
+        description="Si eliminas este parámetro, algunas funciones del sistema podrían dejar de operar correctamente." 
+        variant="light"
+      />
     </div>
   );
 }

@@ -1,35 +1,37 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useFieldSecurity } from "@/hooks/useFieldSecurity";
+
+import { useEffect, useState, useRef, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CustomModal } from "@/components/ui/dialog-custom";
-import { ConfirmModal } from "@/components/ui/modal-confirm";
 import { 
-  Plus, 
   Building2, 
   Hash, 
   Mail, 
   Phone, 
   MapPin, 
   User, 
-  Edit3, 
-  Trash2, 
   CheckCircle2, 
   Save, 
-  Search,
-  ChevronLeft, 
-  ChevronRight, 
-  ChevronsLeft, 
-  ChevronsRight,
-  Briefcase,
-  Store
+  Store,
+  Globe,
+  Activity,
+  Map,
+  Compass,
+  Navigation,
+  Upload,
+  Image as ImageIcon,
+  FileText,
+  X,
+  Loader2
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-interface Empresa {
+interface EmpresaTenant {
   empresa_cod: number;
   empresa_nom: string | null;
   empresa_nom_fan: string | null;
@@ -39,39 +41,97 @@ interface Empresa {
   empresa_dir: string | null;
   empresa_tel: string | null;
   empresa_propietario: string | null;
+  empresa_saldo: number | null;
   empresa_act_eco: number | null;
   empresa_dep: number | null;
-  actividad?: { act_eco_dsc: string } | null;
-  departamento?: { dep_dsc: string } | null;
+  empresa_dis: number | null;
+  empresa_ciu: number | null;
+  empresa_bar: number | null;
+  empresa_logo_empresa: string | null;
+  empresa_logo_reporte: string | null;
 }
+// Componente optimizado para escritura fluida con Debounce
+const FluidInput = ({ label, icon: Icon, value, onChange, ...props }: any) => {
+  const [localValue, setLocalValue] = useState(value || "");
+  const timeoutRef = useRef<any>(null);
+  
+  useEffect(() => {
+    // Solo actualizar el valor local si no estamos escribiendo actualmente
+    if (document.activeElement !== document.getElementById(props.id || label)) {
+      setLocalValue(value || "");
+    }
+  }, [value, label, props.id]);
 
-export default function EmpresaPage() {
-  const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [auxiliares, setAuxiliares] = useState({ actividades: [], departamentos: [] });
+  const handleChange = (e: any) => {
+    const val = e.target.value;
+    setLocalValue(val);
+    
+    // Limpiar el timer anterior
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    
+    // Programar la actualización del estado global para después de 300ms de calma
+    timeoutRef.current = setTimeout(() => {
+      onChange(val);
+    }, 300);
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{label}</Label>
+      <div className="relative">
+        <Input 
+          {...props}
+          id={props.id || label}
+          value={localValue} 
+          onChange={handleChange} 
+          className={`h-12 rounded-2xl border-slate-200 bg-white focus:ring-accent transition-all pl-11 font-medium text-slate-950 shadow-sm ${props.className || ""}`}
+        />
+        {Icon && <Icon className="absolute left-4 top-3.5 h-5 w-5 text-slate-300" />}
+      </div>
+    </div>
+  );
+};
+
+export default function MiEmpresaPage() {
+  const { isHidden, isReadOnly, loadingRestrictions } = useFieldSecurity("Empresa");
+  const [empresa, setEmpresa] = useState<EmpresaTenant | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
   
-  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [itemToDelete, setItemToDelete] = useState<number | null>(null);
-  const [editingItem, setEditingItem] = useState<Empresa | null>(null);
-  
-  // Paginación
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
-  
+  // Listas de catálogos
+  const [actividades, setActividades] = useState<any[]>([]);
+  const [departamentos, setDepartamentos] = useState<any[]>([]);
+  const [distritos, setDistritos] = useState<any[]>([]);
+  const [ciudades, setCiudades] = useState<any[]>([]);
+  const [barrios, setBarrios] = useState<any[]>([]);
+
   const [formData, setFormData] = useState({
-    nombre: "",
-    nombre_fan: "",
-    ruc: "",
-    estado: "A",
-    mail: "",
-    direccion: "",
-    telefono: "",
-    propietario: "",
-    act_eco: "",
-    dep: ""
+    empresa_cod: "",
+    empresa_nom: "",
+    empresa_nom_fan: "",
+    empresa_ruc: "",
+    empresa_mail: "",
+    empresa_tel: "",
+    empresa_dir: "",
+    empresa_propietario: "",
+    empresa_act_eco: "",
+    empresa_dep: "",
+    empresa_dis: "",
+    empresa_ciu: "",
+    empresa_bar: "",
+    empresa_logo_empresa: "",
+    empresa_logo_reporte: ""
+  });
+
+  // Referencias para archivos
+  const logoEmpresaRef = useRef<HTMLInputElement>(null);
+  const logoReporteRef = useRef<HTMLInputElement>(null);
+  const [logoEmpresaFile, setLogoEmpresaFile] = useState<File | null>(null);
+  const [logoReporteFile, setLogoReporteFile] = useState<File | null>(null);
+  const [previews, setPreviews] = useState({
+    empresa: "",
+    reporte: ""
   });
 
   const showToast = (msg: string) => {
@@ -79,19 +139,80 @@ export default function EmpresaPage() {
     setTimeout(() => setToast(null), 3000);
   };
 
+  const fetchCatalogs = async () => {
+    try {
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+      const commonHeaders = {
+        "x-tenant-id": tenantId,
+        "x-user-email": user?.email || "",
+        "x-user-profile": user?.perfil_cod?.toString() || ""
+      };
+
+      const [resAct, resDep, resDis, resCiu, resBar] = await Promise.all([
+        fetch("/api/admin/actividades-laborales", { headers: commonHeaders }),
+        fetch("/api/admin/config-locations?type=dep", { headers: commonHeaders }),
+        fetch("/api/admin/config-locations?type=dis", { headers: commonHeaders }),
+        fetch("/api/admin/config-locations?type=ciu", { headers: commonHeaders }),
+        fetch("/api/admin/config-locations?type=bar", { headers: commonHeaders })
+      ]);
+      
+      const [dataAct, dataDep, dataDis, dataCiu, dataBar] = await Promise.all([
+        resAct.json(), resDep.json(), resDis.json(), resCiu.json(), resBar.json()
+      ]);
+
+      setActividades(Array.isArray(dataAct) ? dataAct : []);
+      setDepartamentos(Array.isArray(dataDep) ? dataDep : []);
+      setDistritos(Array.isArray(dataDis) ? dataDis : []);
+      setCiudades(Array.isArray(dataCiu) ? dataCiu : []);
+      setBarrios(Array.isArray(dataBar) ? dataBar : []);
+    } catch (e) {
+      console.error("Error fetching catalogs:", e);
+    }
+  };
+
   const fetchData = async () => {
     setLoading(true);
+    await fetchCatalogs();
     try {
-      const [resE, resA] = await Promise.all([
-        fetch("/api/admin/empresas"),
-        fetch("/api/admin/auxiliares")
-      ]);
-      const dataE = await resE.json();
-      const dataA = await resA.json();
-      
-      setEmpresas(Array.isArray(dataE) ? dataE : []);
-      setAuxiliares(dataA);
-      setCurrentPage(1);
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+
+      const res = await fetch(`/api/empresa?tenantId=${tenantId}`, {
+        headers: { 
+          "Content-Type": "application/json",
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setEmpresa(data);
+        setFormData({
+          empresa_cod: data.empresa_cod?.toString() || "",
+          empresa_nom: data.empresa_nom || "",
+          empresa_nom_fan: data.empresa_nom_fan || "",
+          empresa_ruc: data.empresa_ruc || "",
+          empresa_mail: data.empresa_mail || "",
+          empresa_tel: data.empresa_tel || "",
+          empresa_dir: data.empresa_dir || "",
+          empresa_propietario: data.empresa_propietario || "",
+          empresa_act_eco: data.empresa_act_eco?.toString() || "",
+          empresa_dep: data.empresa_dep?.toString() || "",
+          empresa_dis: data.empresa_dis?.toString() || "",
+          empresa_ciu: data.empresa_ciu?.toString() || "",
+          empresa_bar: data.empresa_bar?.toString() || "",
+          empresa_logo_empresa: data.empresa_logo_empresa || "",
+          empresa_logo_reporte: data.empresa_logo_reporte || ""
+        });
+        setPreviews({
+          empresa: data.empresa_logo_empresa || "",
+          reporte: data.empresa_logo_reporte || ""
+        });
+      }
     } catch (e) {
       console.error("Error fetching data:", e);
     } finally {
@@ -103,385 +224,473 @@ export default function EmpresaPage() {
     fetchData();
   }, []);
 
-  const openCreate = () => {
-    setEditingItem(null);
-    setFormData({ 
-      nombre: "", 
-      nombre_fan: "",
-      ruc: "", 
-      estado: "A", 
-      mail: "", 
-      direccion: "", 
-      telefono: "", 
-      propietario: "", 
-      act_eco: "", 
-      dep: "" 
-    });
-    setIsModalOpen(true);
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'empresa' | 'reporte') => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (type === 'empresa') {
+        setLogoEmpresaFile(file);
+        setPreviews(prev => ({ ...prev, empresa: URL.createObjectURL(file) }));
+      } else {
+        setLogoReporteFile(file);
+        setPreviews(prev => ({ ...prev, reporte: URL.createObjectURL(file) }));
+      }
+    }
   };
 
-  const openEdit = (item: Empresa) => {
-    setEditingItem(item);
-    setFormData({ 
-      nombre: item.empresa_nom || "", 
-      nombre_fan: item.empresa_nom_fan || "",
-      ruc: item.empresa_ruc || "", 
-      estado: item.empresa_estado || "A", 
-      mail: item.empresa_mail || "", 
-      direccion: item.empresa_dir || "", 
-      telefono: item.empresa_tel || "", 
-      propietario: item.empresa_propietario || "", 
-      act_eco: item.empresa_act_eco?.toString() || "", 
-      dep: item.empresa_dep?.toString() || "" 
+  const uploadFile = async (file: File) => {
+    const uploadFormData = new FormData();
+    uploadFormData.append("file", file);
+    uploadFormData.append("cliDoc", formData.empresa_ruc || "logos");
+    uploadFormData.append("dirId", "empresa");
+
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      body: uploadFormData
     });
-    setIsModalOpen(true);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Error al subir archivo");
+    return data.url;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const method = editingItem ? "PUT" : "POST";
-    const url = editingItem ? `/api/admin/empresas/${editingItem.empresa_cod}` : "/api/admin/empresas";
+    if (!formData.empresa_cod) {
+      showToast("Error: No se pudo identificar la empresa");
+      return;
+    }
+    setSaving(true);
+    try {
+      let logoEmpresaUrl = formData.empresa_logo_empresa;
+      let logoReporteUrl = formData.empresa_logo_reporte;
 
-    const res = await fetch(url, {
-      method,
-      body: JSON.stringify(formData),
-      headers: { "Content-Type": "application/json" }
-    });
+      if (logoEmpresaFile) {
+        logoEmpresaUrl = await uploadFile(logoEmpresaFile);
+      }
+      if (logoReporteFile) {
+        logoReporteUrl = await uploadFile(logoReporteFile);
+      }
 
-    if (res.ok) {
-      setIsModalOpen(false);
-      showToast(editingItem ? "Empresa actualizada" : "Empresa creada");
-      fetchData();
-    } else {
-      const err = await res.json();
-      showToast(err.error || "Error al procesar");
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+
+      const res = await fetch("/api/empresa", {
+        method: "PUT",
+        body: JSON.stringify({
+          ...formData,
+          empresa_logo_empresa: logoEmpresaUrl,
+          empresa_logo_reporte: logoReporteUrl,
+          tenantId
+        }),
+        headers: { 
+          "Content-Type": "application/json",
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        }
+      });
+
+      if (res.ok) {
+        showToast("Configuración actualizada");
+        setLogoEmpresaFile(null);
+        setLogoReporteFile(null);
+        fetchData();
+      } else {
+        const err = await res.json();
+        showToast(err.error || "Error al actualizar");
+      }
+    } catch (error: any) {
+      showToast(error.message || "Error de conexión");
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleDeleteClick = (id: number) => {
-    setItemToDelete(id);
-    setIsConfirmOpen(true);
-  };
+  // Filtrado de cascada con validación de array
+  const safeDepartamentos = useMemo(() => Array.isArray(departamentos) ? departamentos : [], [departamentos]);
+  const safeDistritos = useMemo(() => Array.isArray(distritos) ? distritos : [], [distritos]);
+  const safeCiudades = useMemo(() => Array.isArray(ciudades) ? ciudades : [], [ciudades]);
+  const safeBarrios = useMemo(() => Array.isArray(barrios) ? barrios : [], [barrios]);
+  const safeActividades = useMemo(() => Array.isArray(actividades) ? actividades : [], [actividades]);
 
-  const onConfirmDelete = async () => {
-    if (!itemToDelete) return;
-    const res = await fetch(`/api/admin/empresas/${itemToDelete}`, { method: "DELETE" });
-    if (res.ok) {
-      setIsConfirmOpen(false);
-      showToast("Empresa eliminada");
-      fetchData();
-    } else {
-      const err = await res.json();
-      showToast(err.error || "Error al eliminar");
-    }
-  };
-
-  // Filtrado
-  const filteredEmpresas = empresas.filter(e => 
-    (e.empresa_nom?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
-    (e.empresa_nom_fan?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
-    (e.empresa_ruc || "").includes(searchTerm)
+  const filteredDistritos = useMemo(() => 
+    safeDistritos.filter(d => d.dis_dep_cod?.toString() === formData.empresa_dep),
+    [safeDistritos, formData.empresa_dep]
   );
 
-  // Lógica de Paginación
-  const totalPages = Math.ceil(filteredEmpresas.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const currentEmpresas = filteredEmpresas.slice(startIndex, startIndex + itemsPerPage);
+  const filteredCiudades = useMemo(() => 
+    safeCiudades.filter(c => 
+      c.ciu_dep_cod?.toString() === formData.empresa_dep && 
+      c.ciu_dis_cod?.toString() === formData.empresa_dis
+    ),
+    [safeCiudades, formData.empresa_dep, formData.empresa_dis]
+  );
 
-  const goToPage = (page: number) => {
-    if (page >= 1 && page <= totalPages) {
-      setCurrentPage(page);
-    }
-  };
+  const filteredBarrios = useMemo(() => 
+    safeBarrios.filter(b => 
+      b.bar_dep_cod?.toString() === formData.empresa_dep && 
+      b.bar_dis_cod?.toString() === formData.empresa_dis &&
+      b.bar_ciu_cod?.toString() === formData.empresa_ciu
+    ),
+    [safeBarrios, formData.empresa_dep, formData.empresa_dis, formData.empresa_ciu]
+  );
+
+  if (loadingRestrictions && loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="flex flex-col items-center gap-4 text-accent font-bold italic uppercase tracking-widest text-xs animate-pulse">
+          Sincronizando Seguridad...
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-8 space-y-8 animate-in fade-in duration-500 relative">
+    <div className="p-8 space-y-6 animate-in fade-in duration-500">
       {toast && (
-        <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[200] animate-in slide-in-from-top-8 duration-300">
-          <div className="bg-slate-900 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 border border-slate-700/50 backdrop-blur-xl bg-opacity-90">
-            <div className="bg-emerald-500 p-1 rounded-full text-white"><CheckCircle2 className="h-4 w-4" /></div>
+        <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[200] animate-in slide-in-from-top-8">
+          <div className="bg-white/80 backdrop-blur-xl text-slate-600 px-8 py-4 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex items-center gap-4 border border-white/50 ring-1 ring-slate-100">
+            <div className="bg-emerald-500/10 p-2 rounded-xl">
+              <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+            </div>
             <span className="font-bold text-sm tracking-tight">{toast}</span>
           </div>
         </div>
       )}
 
-      <div className="flex justify-between items-center">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-accent">Gestión de Empresa</h1>
-          <p className="text-muted mt-1">Directorio corporativo y configuración de razones sociales.</p>
+          <h1 className="text-3xl font-bold tracking-tight text-accent">Mi Empresa</h1>
+          <p className="text-muted mt-1 font-medium italic">Configuración de los datos operativos y legales de tu negocio.</p>
         </div>
-        {!loading && empresas.length === 0 && (
-          <Button onClick={openCreate} className="bg-accent text-white font-bold shadow-lg flex gap-2">
-            <Plus className="h-4 w-4" /> Nueva Empresa
-          </Button>
-        )}
       </div>
 
-      <Card className="bg-card border-border shadow-xl overflow-hidden">
-        <CardHeader className="border-b bg-background/50 space-y-4">
-          <div className="flex justify-between items-center">
-            <div>
-              <CardTitle className="text-lg">Empresas Registradas</CardTitle>
-              <CardDescription>Visualiza y administra las compañías del grupo.</CardDescription>
+      <div className="grid grid-cols-12 gap-8">
+        {/* Lado izquierdo: Info Básica */}
+        <div className="col-span-12 lg:col-span-4 space-y-6">
+          <Card className="bg-card border-none shadow-xl rounded-3xl overflow-hidden text-center p-10">
+            <div className="mx-auto w-32 h-32 rounded-3xl bg-accent/10 flex items-center justify-center text-accent mb-6 shadow-lg shadow-accent/5 overflow-hidden border-4 border-white">
+              {previews.empresa ? (
+                <img src={previews.empresa} alt="Logo Empresa" className="w-full h-full object-cover" />
+              ) : (
+                <Building2 className="h-12 w-12" />
+              )}
             </div>
-            <div className="relative w-64">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted opacity-50" />
-              <Input 
-                placeholder="Buscar por nombre o RUC..." 
-                className="pl-10 h-9"
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setCurrentPage(1);
-                }}
-              />
+            <h2 className="text-xl font-bold text-slate-700 mb-1">{empresa?.empresa_nom}</h2>
+            <p className="text-accent text-sm font-black italic mb-6 uppercase tracking-tighter">RUC: {empresa?.empresa_ruc}</p>
+            
+            <div className="space-y-3 pt-6 border-t border-slate-100">
+               <div className="flex items-center gap-3 text-left">
+                  <div className="p-2 rounded-lg bg-slate-50 text-slate-400 border border-slate-100"><Globe className="h-4 w-4" /></div>
+                  <div>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none">Actividad Económica</p>
+                    <p className="text-xs text-slate-600 font-black italic">{safeActividades.find(a => a.act_eco_cod.toString() === formData.empresa_act_eco)?.act_eco_dsc || 'No especificada'}</p>
+                  </div>
+               </div>
+               <div className="flex items-center gap-3 text-left">
+                  <div className="p-2 rounded-lg bg-slate-50 text-slate-400 border border-slate-100"><MapPin className="h-4 w-4" /></div>
+                  <div>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none">Ubicación</p>
+                    <p className="text-xs text-slate-600 font-black italic">
+                      {safeDepartamentos.find(d => d.dep_cod.toString() === formData.empresa_dep)?.dep_dsc || 'N/A'}
+                    </p>
+                  </div>
+               </div>
             </div>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-border bg-background/30 text-xs uppercase tracking-widest text-muted font-bold">
-                  <th className="px-6 py-4 w-20">ID</th>
-                  <th className="px-6 py-4">Empresa / RUC</th>
-                  <th className="px-6 py-4">Contacto / Email</th>
-                  <th className="px-6 py-4">Actividad / Ubicación</th>
-                  <th className="px-6 py-4 text-center">Estado</th>
-                  <th className="px-6 py-4 text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {loading ? (
-                  <tr><td colSpan={6} className="px-6 py-8 text-center text-muted italic">Cargando directorio empresarial...</td></tr>
-                ) : currentEmpresas.length === 0 ? (
-                  <tr><td colSpan={6} className="px-6 py-8 text-center text-muted italic">No se encontraron empresas.</td></tr>
-                ) : currentEmpresas.map((item) => (
-                  <tr key={item.empresa_cod} className="hover:bg-background/40 transition-colors group">
-                    <td className="px-6 py-4 font-mono text-xs text-muted">#{item.empresa_cod}</td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-lg bg-accent/5 text-accent border border-accent/10">
-                          <Building2 className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="font-bold text-foreground leading-none mb-1">{item.empresa_nom}</p>
-                          <div className="flex items-center gap-2">
-                             <div className="flex items-center gap-1 text-[11px] text-muted font-medium italic">
-                                <Hash className="h-3 w-3" /> {item.empresa_ruc}
-                             </div>
-                             {item.empresa_nom_fan && (
-                               <Badge variant="outline" className="text-[9px] py-0 h-4 bg-slate-50 text-slate-500 border-slate-200">
-                                 {item.empresa_nom_fan}
-                               </Badge>
-                             )}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-600">
-                          <Mail className="h-3.5 w-3.5 text-slate-400" />
-                          {item.empresa_mail || "-"}
-                        </div>
-                        <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400 pl-5">
-                          <Phone className="h-3 w-3" />
-                          {item.empresa_tel || "-"}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-tighter text-blue-600">
-                          <Briefcase className="h-3 w-3" />
-                          {item.actividad?.act_eco_dsc || "Sin actividad"}
-                        </div>
-                        <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400">
-                          <MapPin className="h-3 w-3" />
-                          {item.departamento?.dep_dsc || "Sin ubicación"}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <Badge variant="outline" className={`font-black uppercase text-[9px] tracking-tight ${item.empresa_estado === 'A' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-red-500/10 text-red-600 border-red-500/20'}`}>
-                        {item.empresa_estado === 'A' ? 'ACTIVO' : 'INACTIVO'}
-                      </Badge>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button onClick={() => openEdit(item)} variant="outline" size="sm" className="h-8 gap-2 border-border hover:bg-background group-hover:border-accent group-hover:text-accent transition-all px-3 font-bold text-xs">
-                          <Edit3 className="h-3.5 w-3.5" /> Editar
-                        </Button>
-                        <Button onClick={() => handleDeleteClick(item.empresa_cod)} variant="outline" size="sm" className="h-8 w-8 p-0 text-red-500 border-transparent hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          
-          {/* Paginación */}
-          {!loading && (
-            <div className="flex items-center justify-between px-6 py-4 bg-background/50 border-t border-border">
-              <p className="text-xs text-muted font-medium">
-                Mostrando <span className="text-foreground font-bold">{filteredEmpresas.length > 0 ? startIndex + 1 : 0}</span> a <span className="text-foreground font-bold">{Math.min(startIndex + itemsPerPage, filteredEmpresas.length)}</span> de <span className="text-foreground font-bold">{filteredEmpresas.length}</span> empresas
-              </p>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goToPage(1)} disabled={currentPage === 1 || totalPages <= 1} title="Primero"><ChevronsLeft className="h-4 w-4" /></Button>
-                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1 || totalPages <= 1} title="Anterior"><ChevronLeft className="h-4 w-4" /></Button>
+          </Card>
+
+          <Card className="bg-accent text-white p-6 rounded-3xl shadow-lg shadow-accent/20 relative overflow-hidden group">
+             <div className="relative z-10">
+                <p className="text-xs font-black uppercase tracking-widest opacity-70 mb-1">Información Importante</p>
+                <p className="text-sm font-medium leading-relaxed italic">
+                   Estos datos se reflejarán en todos tus documentos oficiales, reportes de viaje y trazabilidad del sistema.
+                </p>
+             </div>
+             <Building2 className="absolute -right-8 -bottom-8 h-32 w-32 opacity-10 group-hover:scale-110 transition-transform" />
+          </Card>
+        </div>
+
+        {/* Lado derecho: Formulario completo */}
+        <div className="col-span-12 lg:col-span-8">
+          <form onSubmit={handleSubmit}>
+            <Card className="bg-card border-none shadow-xl rounded-3xl overflow-hidden">
+              <CardHeader className="bg-slate-50/50 border-b border-slate-100 p-8">
+                <CardTitle className="text-lg font-bold text-slate-700">Información General</CardTitle>
+                <CardDescription className="text-xs font-medium">Actualice la información de su negocio de forma centralizada.</CardDescription>
+              </CardHeader>
+              <CardContent className="p-8 space-y-6">
                 
-                <div className="flex items-center gap-1 mx-2">
-                  <Badge variant="secondary" className="h-8 w-8 flex items-center justify-center p-0 rounded-lg bg-accent/10 text-accent font-bold border-accent/20">
-                    {currentPage}
-                  </Badge>
-                  <span className="text-xs text-muted font-bold px-1">de</span>
-                  <span className="text-xs text-muted font-bold px-1">{totalPages || 1}</span>
+                {/* Gestión de Logos */}
+                 <div className="bg-accent/5 p-6 rounded-2xl border border-accent/10 space-y-4">
+                    <p className="text-[11px] font-black uppercase text-accent tracking-[0.2em] mb-2 border-b border-accent/10 pb-2 flex items-center gap-2">
+                       <ImageIcon className="h-3 w-3" /> Imagen y Branding
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                       {!isHidden("empresa_logo_empresa") && (
+                         <div className="space-y-2">
+                           <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Logo de la Empresa</Label>
+                           <div className="flex flex-col gap-3">
+                              <div className="flex items-center gap-4">
+                                 <div className="h-16 w-16 rounded-xl bg-white border border-accent/20 flex items-center justify-center overflow-hidden">
+                                    {previews.empresa ? (
+                                      <img src={previews.empresa} alt="Preview" className="w-full h-full object-cover" />
+                                    ) : (
+                                      <ImageIcon className="h-6 w-6 text-accent/30" />
+                                    )}
+                                 </div>
+                                 <input 
+                                   type="file" 
+                                   ref={logoEmpresaRef} 
+                                   onChange={(e) => handleFileChange(e, 'empresa')} 
+                                   className="hidden" 
+                                   accept="image/*"
+                                   disabled={isReadOnly("empresa_logo_empresa")}
+                                 />
+                                 <Button 
+                                   type="button" 
+                                   variant="outline" 
+                                   onClick={() => logoEmpresaRef.current?.click()}
+                                   className="h-10 border-accent/20 text-accent font-bold hover:bg-accent/5 rounded-xl gap-2"
+                                   disabled={isReadOnly("empresa_logo_empresa")}
+                                 >
+                                   <Upload className="h-4 w-4" /> Seleccionar Logo
+                                 </Button>
+                              </div>
+                              <p className="text-[10px] text-slate-400 italic">Recomendado: 512x512px (PNG o JPG).</p>
+                           </div>
+                         </div>
+                       )}
+                       {!isHidden("empresa_logo_reporte") && (
+                         <div className="space-y-2">
+                           <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Logo para Reportería</Label>
+                           <div className="flex flex-col gap-3">
+                              <div className="flex items-center gap-4">
+                                 <div className="h-16 w-16 rounded-xl bg-white border border-accent/20 flex items-center justify-center overflow-hidden">
+                                    {previews.reporte ? (
+                                      <img src={previews.reporte} alt="Preview" className="w-full h-full object-cover" />
+                                    ) : (
+                                      <FileText className="h-6 w-6 text-accent/30" />
+                                    )}
+                                 </div>
+                                 <input 
+                                   type="file" 
+                                   ref={logoReporteRef} 
+                                   onChange={(e) => handleFileChange(e, 'reporte')} 
+                                   className="hidden" 
+                                   accept="image/*"
+                                   disabled={isReadOnly("empresa_logo_reporte")}
+                                 />
+                                 <Button 
+                                   type="button" 
+                                   variant="outline" 
+                                   onClick={() => logoReporteRef.current?.click()}
+                                   className="h-10 border-accent/20 text-accent font-bold hover:bg-accent/5 rounded-xl gap-2"
+                                   disabled={isReadOnly("empresa_logo_reporte")}
+                                 >
+                                   <Upload className="h-4 w-4" /> Seleccionar Logo
+                                 </Button>
+                              </div>
+                              <p className="text-[10px] text-slate-400 italic">Logo optimizado para impresión en PDF.</p>
+                           </div>
+                         </div>
+                       )}
+                    </div>
+                 </div>
+
+                <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100 space-y-6">
+                   <p className="text-[11px] font-black uppercase text-accent tracking-[0.2em] mb-2 border-b border-accent/10 pb-2 flex items-center gap-2">
+                      <Store className="h-3 w-3" /> Identidad Corporativa
+                   </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {!isHidden("empresa_nom") && (
+                        <FluidInput 
+                          label="Razón Social"
+                          icon={Building2}
+                          value={formData.empresa_nom}
+                          onChange={(v: string) => setFormData(prev => ({...prev, empresa_nom: v}))}
+                          required
+                          disabled={isReadOnly("empresa_nom")}
+                        />
+                      )}
+                      {!isHidden("empresa_nom_fan") && (
+                        <FluidInput 
+                          label="Nombre Fantasía"
+                          icon={Store}
+                          value={formData.empresa_nom_fan}
+                          onChange={(v: string) => setFormData(prev => ({...prev, empresa_nom_fan: v}))}
+                          disabled={isReadOnly("empresa_nom_fan")}
+                        />
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {!isHidden("empresa_ruc") && (
+                        <FluidInput 
+                          label="RUC"
+                          icon={Hash}
+                          value={formData.empresa_ruc}
+                          onChange={(v: string) => setFormData(prev => ({...prev, empresa_ruc: v}))}
+                          className="font-mono"
+                          required
+                          disabled={isReadOnly("empresa_ruc")}
+                        />
+                      )}
+                      {!isHidden("empresa_propietario") && (
+                        <FluidInput 
+                          label="Representante Legal"
+                          icon={User}
+                          value={formData.empresa_propietario}
+                          onChange={(v: string) => setFormData(prev => ({...prev, empresa_propietario: v}))}
+                          disabled={isReadOnly("empresa_propietario")}
+                        />
+                      )}
+                    </div>
+
+                   {!isHidden("empresa_act_eco") && (
+                     <div className="space-y-2">
+                        <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Actividad Económica</Label>
+                        <Select value={formData.empresa_act_eco} onValueChange={v => setFormData({...formData, empresa_act_eco: v})} disabled={isReadOnly("empresa_act_eco")}>
+                          <SelectTrigger className="h-12 rounded-2xl border-slate-200 bg-white pl-11 relative text-slate-950 font-medium shadow-sm">
+                            <Activity className="absolute left-4 top-3.5 h-5 w-5 text-slate-300" />
+                            <SelectValue placeholder="Seleccione una actividad" />
+                          </SelectTrigger>
+                          <SelectContent className="rounded-2xl shadow-2xl border-slate-100">
+                            {safeActividades.map(a => (
+                              <SelectItem key={a.act_eco_cod} value={a.act_eco_cod.toString()}>{a.act_eco_dsc}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                     </div>
+                   )}
                 </div>
 
-                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages || totalPages <= 1} title="Siguiente"><ChevronRight className="h-4 w-4" /></Button>
-                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => goToPage(totalPages)} disabled={currentPage === totalPages || totalPages <= 1} title="Último"><ChevronsRight className="h-4 w-4" /></Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100 space-y-6">
+                   <p className="text-[11px] font-black uppercase text-accent tracking-[0.2em] mb-2 border-b border-accent/10 pb-2 flex items-center gap-2">
+                      <MapPin className="h-3 w-3" /> Ubicación y Contacto
+                   </p>
+                   
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {!isHidden("empresa_dep") && (
+                        <div className="space-y-2">
+                          <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Departamento</Label>
+                          <Select value={formData.empresa_dep} onValueChange={v => setFormData({...formData, empresa_dep: v, empresa_dis: "", empresa_ciu: "", empresa_bar: ""})} disabled={isReadOnly("empresa_dep")}>
+                            <SelectTrigger className="h-12 rounded-2xl border-slate-200 bg-white pl-11 relative text-slate-950 font-medium shadow-sm">
+                               <Map className="absolute left-4 top-3.5 h-5 w-5 text-slate-300" />
+                               <SelectValue placeholder="Seleccione Departamento" />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-2xl shadow-2xl border-slate-100">
+                              {safeDepartamentos.map(d => (
+                                <SelectItem key={d.dep_cod} value={d.dep_cod.toString()}>{d.dep_dsc}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                      {!isHidden("empresa_dis") && (
+                        <div className="space-y-2">
+                          <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Distrito</Label>
+                          <Select value={formData.empresa_dis} onValueChange={v => setFormData({...formData, empresa_dis: v, empresa_ciu: "", empresa_bar: ""})} disabled={!formData.empresa_dep || isReadOnly("empresa_dis")}>
+                            <SelectTrigger className="h-12 rounded-2xl border-slate-200 bg-white pl-11 relative text-slate-950 font-medium shadow-sm">
+                               <Compass className="absolute left-4 top-3.5 h-5 w-5 text-slate-300" />
+                               <SelectValue placeholder="Seleccione Distrito" />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-2xl shadow-2xl border-slate-100">
+                              {filteredDistritos.map(d => (
+                                <SelectItem key={d.dis_cod} value={d.dis_cod.toString()}>{d.dis_dsc}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                   </div>
 
-      <CustomModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingItem ? "Editar Empresa" : "Registrar Nueva Empresa"}>
-        <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2 col-span-2">
-              <Label>Nombre de la Empresa / Razón Social</Label>
-              <div className="relative">
-                <Input 
-                  value={formData.nombre} 
-                  onChange={(e) => setFormData({...formData, nombre: e.target.value})} 
-                  placeholder="Ej: Ikatu Logística S.A."
-                  className="pl-9"
-                  required 
-                  autoFocus
-                />
-                <Building2 className="absolute left-3 top-2.5 h-4 w-4 text-muted opacity-40" />
-              </div>
-            </div>
-            <div className="space-y-2 col-span-2">
-              <Label>Nombre Fantasía</Label>
-              <div className="relative">
-                <Input 
-                  value={formData.nombre_fan} 
-                  onChange={(e) => setFormData({...formData, nombre_fan: e.target.value})} 
-                  placeholder="Ej: Ikatu Express"
-                  className="pl-9"
-                />
-                <Store className="absolute left-3 top-2.5 h-4 w-4 text-muted opacity-40" />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>RUC</Label>
-              <Input 
-                value={formData.ruc} 
-                onChange={(e) => setFormData({...formData, ruc: e.target.value})} 
-                placeholder="Ej: 80012345-0"
-                required 
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Estado</Label>
-              <select 
-                className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                value={formData.estado}
-                onChange={e => setFormData({...formData, estado: e.target.value})}
-              >
-                <option value="A">Activo</option>
-                <option value="I">Inactivo</option>
-              </select>
-            </div>
-          </div>
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {!isHidden("empresa_ciu") && (
+                        <div className="space-y-2">
+                          <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Ciudad</Label>
+                          <Select value={formData.empresa_ciu} onValueChange={v => setFormData({...formData, empresa_ciu: v, empresa_bar: ""})} disabled={!formData.empresa_dis || isReadOnly("empresa_ciu")}>
+                            <SelectTrigger className="h-12 rounded-2xl border-slate-200 bg-white pl-11 relative text-slate-950 font-medium shadow-sm">
+                               <Building2 className="absolute left-4 top-3.5 h-5 w-5 text-slate-300" />
+                               <SelectValue placeholder="Seleccione Ciudad" />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-2xl shadow-2xl border-slate-100">
+                              {filteredCiudades.map(c => (
+                                <SelectItem key={c.ciu_cod} value={c.ciu_cod.toString()}>{c.ciu_dsc}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                      {!isHidden("empresa_bar") && (
+                        <div className="space-y-2">
+                          <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Barrio</Label>
+                          <Select value={formData.empresa_bar} onValueChange={v => setFormData({...formData, empresa_bar: v})} disabled={!formData.empresa_ciu || isReadOnly("empresa_bar")}>
+                            <SelectTrigger className="h-12 rounded-2xl border-slate-200 bg-white pl-11 relative text-slate-950 font-medium shadow-sm">
+                               <Navigation className="absolute left-4 top-3.5 h-5 w-5 text-slate-300" />
+                               <SelectValue placeholder="Seleccione Barrio" />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-2xl shadow-2xl border-slate-100">
+                              {filteredBarrios.map(b => (
+                                <SelectItem key={b.bar_cod} value={b.bar_cod.toString()}>{b.bar_dsc}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                   </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Email Corporativo</Label>
-              <Input 
-                type="email"
-                value={formData.mail} 
-                onChange={(e) => setFormData({...formData, mail: e.target.value})} 
-                placeholder="contacto@empresa.com"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Teléfono</Label>
-              <Input 
-                value={formData.telefono} 
-                onChange={(e) => setFormData({...formData, telefono: e.target.value})} 
-                placeholder="+595 ..."
-              />
-            </div>
-          </div>
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {!isHidden("empresa_mail") && (
+                        <FluidInput 
+                          label="Email de Contacto"
+                          icon={Mail}
+                          type="email"
+                          value={formData.empresa_mail}
+                          onChange={(v: string) => setFormData(prev => ({...prev, empresa_mail: v}))}
+                          disabled={isReadOnly("empresa_mail")}
+                        />
+                      )}
+                      {!isHidden("empresa_tel") && (
+                        <FluidInput 
+                          label="Teléfono"
+                          icon={Phone}
+                          value={formData.empresa_tel}
+                          onChange={(v: string) => setFormData(prev => ({...prev, empresa_tel: v}))}
+                          disabled={isReadOnly("empresa_tel")}
+                        />
+                      )}
+                   </div>
 
-          <div className="space-y-2">
-            <Label>Dirección</Label>
-            <div className="relative">
-              <Input 
-                value={formData.direccion} 
-                onChange={(e) => setFormData({...formData, direccion: e.target.value})} 
-                placeholder="Calle, Nro, Referencia..."
-                className="pl-9"
-              />
-              <MapPin className="absolute left-3 top-2.5 h-4 w-4 text-muted opacity-40" />
-            </div>
-          </div>
+                   {!isHidden("empresa_dir") && (
+                     <FluidInput 
+                       label="Dirección Comercial Exacta"
+                       icon={MapPin}
+                       value={formData.empresa_dir}
+                       onChange={(v: string) => setFormData(prev => ({...prev, empresa_dir: v}))}
+                       disabled={isReadOnly("empresa_dir")}
+                     />
+                   )}
+                </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Actividad Económica</Label>
-              <select 
-                className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                value={formData.act_eco}
-                onChange={e => setFormData({...formData, act_eco: e.target.value})}
-              >
-                <option value="">Seleccionar...</option>
-                {auxiliares.actividades.map((a: any) => (
-                  <option key={a.act_eco_cod} value={a.act_eco_cod}>{a.act_eco_dsc}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label>Departamento</Label>
-              <select 
-                className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                value={formData.dep}
-                onChange={e => setFormData({...formData, dep: e.target.value})}
-              >
-                <option value="">Seleccionar...</option>
-                {auxiliares.departamentos.map((d: any) => (
-                  <option key={d.dep_cod} value={d.dep_cod}>{d.dep_dsc}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Propietario / Representante</Label>
-            <div className="relative">
-              <Input 
-                value={formData.propietario} 
-                onChange={(e) => setFormData({...formData, propietario: e.target.value})} 
-                placeholder="Nombre del titular"
-                className="pl-9"
-              />
-              <User className="absolute left-3 top-2.5 h-4 w-4 text-muted opacity-40" />
-            </div>
-          </div>
-
-          <div className="flex gap-3 pt-4">
-            <Button type="submit" className="flex-1 bg-accent text-white font-bold gap-2"><Save className="h-4 w-4" /> {editingItem ? "Actualizar" : "Guardar Empresa"}</Button>
-            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1">Cancelar</Button>
-          </div>
-        </form>
-      </CustomModal>
-
-      <ConfirmModal isOpen={isConfirmOpen} onClose={() => setIsConfirmOpen(false)} onConfirm={onConfirmDelete} title="¿Eliminar Empresa?" description="Esta acción es permanente. Solo se podrá eliminar si no existen usuarios vinculados a esta razón social." />
+                 <div className="pt-8 border-t border-slate-100 flex justify-end">
+                    <Button 
+                      type="submit" 
+                      disabled={saving}
+                      className="bg-accent text-white font-bold h-14 px-10 rounded-2xl shadow-xl shadow-accent/20 flex gap-3 uppercase tracking-tighter transition-all active:scale-95 disabled:opacity-70 disabled:scale-100"
+                    >
+                      {saving ? (
+                         <Loader2 className="h-5 w-5 animate-spin" />
+                      ) : (
+                         <Save className="h-5 w-5" />
+                      )}
+                      {saving ? "Guardando..." : "Guardar Configuración"}
+                    </Button>
+                 </div>
+              </CardContent>
+            </Card>
+          </form>
+        </div>
+      </div>
     </div>
   );
 }

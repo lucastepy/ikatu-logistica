@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { getPrisma, prismaPublic } from "@/lib/prisma";
+const prisma = getPrisma("tenant_la_transportadora");
 
 export async function GET() {
   try {
@@ -8,8 +9,8 @@ export async function GET() {
         p.pun_cob_id, p.pun_cob_nombre, p.pun_cob_tipo,
         p.pun_cob_usuario_alta, p.pun_cob_fecha_alta, p.pun_cob_usuario_mod, p.pun_cob_fecha_mod,
         t.tip_pun_cob_nombre as tipo_nombre,
-        ST_X(p.pun_cob_ubicacion::geometry) as lng,
-        ST_Y(p.pun_cob_ubicacion::geometry) as lat
+        public.ST_X(p.pun_cob_ubicacion::public.geometry) as lng,
+        public.ST_Y(p.pun_cob_ubicacion::public.geometry) as lat
       FROM puntos_cobro p
       JOIN tipo_puntos_cobro t ON p.pun_cob_tipo = t.tip_pun_cob_id
       ORDER BY p.pun_cob_id ASC
@@ -27,7 +28,7 @@ export async function GET() {
       ...data.map(i => i.pun_cob_usuario_mod)
     ].filter(Boolean)));
 
-    const users = await prisma.usuario.findMany({
+    const users = await prismaPublic.usuario.findMany({
       where: { usuario_email: { in: emails as string[] } },
       select: { usuario_email: true, usuario_nombre: true }
     });
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
           pun_cob_ubicacion, pun_cob_usuario_alta
         ) VALUES (
           ${nextId}, ${nombre}, ${parseInt(tipo)},
-          ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326),
+          public.ST_SetSRID(public.ST_MakePoint(CAST(${lng} AS float8), CAST(${lat} AS float8)), 4326),
           ${usuario || "ADMIN"}
         )
       `;

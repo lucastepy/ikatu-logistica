@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import dynamic from "next/dynamic";
+import { useFieldSecurity } from "@/hooks/useFieldSecurity";
 
 const PolygonMap = dynamic(() => import("@/components/maps/PolygonMap"), { 
   ssr: false,
@@ -24,8 +25,20 @@ type LocationType = "dep" | "dis" | "ciu" | "bar" | "zon";
 
 export default function ConfigLocationsPage() {
   const [activeTab, setActiveTab] = useState<LocationType>("dep");
+  
+  const entityNames: Record<LocationType, string> = {
+    dep: "Departamento",
+    dis: "Distrito",
+    ciu: "Ciudad",
+    bar: "Barrio",
+    zon: "Zona"
+  };
+
+  const { isHidden, isReadOnly, loadingRestrictions } = useFieldSecurity(entityNames[activeTab]);
+
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   
@@ -73,8 +86,19 @@ export default function ConfigLocationsPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+      const commonHeaders = {
+        "x-tenant-id": tenantId,
+        "x-user-email": user?.email || "",
+        "x-user-profile": user?.perfil_cod?.toString() || ""
+      };
+
       // Cargamos el catálogo actual (el que se muestra en la grilla)
-      const res = await fetch(`/api/admin/config-locations?type=${activeTab}`);
+      const res = await fetch(`/api/admin/config-locations?type=${activeTab}`, {
+        headers: commonHeaders
+      });
       if (!res.ok) throw new Error(`Error en catálogo: ${res.status}`);
       const json = await res.json();
       setData(Array.isArray(json) ? json : []);
@@ -88,7 +112,7 @@ export default function ConfigLocationsPage() {
       ];
 
       const results = await Promise.allSettled(
-        endpoints.map(e => fetch(e.url).then(r => r.ok ? r.json() : []))
+        endpoints.map(e => fetch(e.url, { headers: commonHeaders }).then(r => r.ok ? r.json() : []))
       );
 
       results.forEach((result, index) => {
@@ -142,30 +166,44 @@ export default function ConfigLocationsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const id = editingItem ? (editingItem.dep_cod || editingItem.dis_cod || editingItem.ciu_cod || editingItem.bar_cod || editingItem.zon_id) : null;
-    const method = editingItem ? "PUT" : "POST";
-    const url = editingItem ? `/api/admin/config-locations/${id}` : "/api/admin/config-locations";
+    setIsSubmitting(true);
+    try {
+      const id = editingItem ? (editingItem.dep_cod || editingItem.dis_cod || editingItem.ciu_cod || editingItem.bar_cod || editingItem.zon_id) : null;
+      const method = editingItem ? "PUT" : "POST";
+      const url = editingItem ? `/api/admin/config-locations/${id}` : "/api/admin/config-locations";
 
-    const userJson = localStorage.getItem("user");
-    const user = userJson ? JSON.parse(userJson) : null;
-    const usuarioPk = user?.id?.toString() || "SISTEMA";
+      const userJson = localStorage.getItem("user");
+      const user = userJson ? JSON.parse(userJson) : null;
+      const tenantId = user?.tenantId || "public";
+      const usuarioPk = user?.id?.toString() || "SISTEMA";
 
-    const res = await fetch(url, {
-      method,
-      body: JSON.stringify({ 
-        type: activeTab, 
-        data: { ...formData, usuario: usuarioPk } 
-      }),
-      headers: { "Content-Type": "application/json" }
-    });
+      const res = await fetch(url, {
+        method,
+        body: JSON.stringify({ 
+          type: activeTab, 
+          data: { ...formData, usuario: usuarioPk } 
+        }),
+        headers: { 
+          "Content-Type": "application/json",
+          "x-tenant-id": tenantId,
+          "x-user-email": user?.email || "",
+          "x-user-profile": user?.perfil_cod?.toString() || ""
+        }
+      });
 
-    if (res.ok) {
-      setIsModalOpen(false);
-      showToast(editingItem ? "Registro actualizado" : "Registro guardado");
-      fetchData();
-    } else {
-       const err = await res.json();
-       showToast(err.error || "Error al procesar");
+      if (res.ok) {
+        setIsModalOpen(false);
+        showToast(editingItem ? "Registro actualizado" : "Registro guardado");
+        fetchData();
+      } else {
+        const err = await res.json();
+        showToast(err.error || "Error al procesar");
+      }
+    } catch (e) {
+      console.error(e);
+      showToast("Error de conexión");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -236,13 +274,22 @@ export default function ConfigLocationsPage() {
       const randomColor = colors[Math.floor(Math.random() * colors.length)];
       
       try {
+        const userJson = localStorage.getItem("user");
+        const user = userJson ? JSON.parse(userJson) : null;
+        const tenantId = user?.tenantId || "public";
+
         await fetch("/api/admin/config-locations", {
           method: "POST",
           body: JSON.stringify({ 
             type: "zon", 
             data: { dsc: fullName, color: randomColor, poligono: feature.geometry, usuario: usuarioPk } 
           }),
-          headers: { "Content-Type": "application/json" }
+          headers: { 
+            "Content-Type": "application/json",
+            "x-tenant-id": tenantId,
+            "x-user-email": user?.email || "",
+            "x-user-profile": user?.perfil_cod?.toString() || ""
+          }
         });
         successCount++;
       } catch (err) {}
@@ -257,7 +304,19 @@ export default function ConfigLocationsPage() {
   const onConfirmDelete = async () => {
     if (!itemToDelete) return;
     const id = itemToDelete.dep_cod || itemToDelete.dis_cod || itemToDelete.ciu_cod || itemToDelete.bar_cod || itemToDelete.zon_id;
-    const res = await fetch(`/api/admin/config-locations/${id}?type=${activeTab}`, { method: "DELETE" });
+    
+    const userJson = localStorage.getItem("user");
+    const user = userJson ? JSON.parse(userJson) : null;
+    const tenantId = user?.tenantId || "public";
+
+    const res = await fetch(`/api/admin/config-locations/${id}?type=${activeTab}`, { 
+      method: "DELETE",
+      headers: {
+        "x-tenant-id": tenantId,
+        "x-user-email": user?.email || "",
+        "x-user-profile": user?.perfil_cod?.toString() || ""
+      }
+    });
     if (res.ok) {
       setIsConfirmOpen(false);
       showToast("Registro eliminado");
@@ -298,6 +357,10 @@ export default function ConfigLocationsPage() {
     { id: "bar", label: "Barrios", icon: Home },
     { id: "zon", label: "Zonas", icon: MapPin }
   ] as const;
+
+  if (loadingRestrictions && loading) {
+    return <div className="h-screen flex items-center justify-center text-slate-400 font-bold uppercase tracking-widest animate-pulse">Sincronizando Seguridad...</div>;
+  }
 
   return (
     <div className="p-8 space-y-6 relative">
@@ -368,12 +431,12 @@ export default function ConfigLocationsPage() {
 
                 {activeTab !== "dep" && activeTab !== "zon" && (
                   <div className="flex gap-2">
-                    <select className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-500 outline-none" value={gridFilters.dep} onChange={e => {setGridFilters({...gridFilters, dep: e.target.value, dis:"", ciu:""}); setCurrentPage(1);}}>
+                    <select className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-950 outline-none shadow-sm focus:ring-1 focus:ring-accent" value={gridFilters.dep} onChange={e => {setGridFilters({...gridFilters, dep: e.target.value, dis:"", ciu:""}); setCurrentPage(1);}}>
                         <option value="">DPTO</option>
                         {deps.map(d => <option key={d.dep_cod} value={d.dep_cod}>{d.dep_dsc}</option>)}
                     </select>
                     {(activeTab === "ciu" || activeTab === "bar") && (
-                      <select className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-500 outline-none" value={gridFilters.dis} onChange={e => {setGridFilters({...gridFilters, dis: e.target.value, ciu:""}); setCurrentPage(1);}} disabled={!gridFilters.dep}>
+                      <select className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-950 outline-none shadow-sm focus:ring-1 focus:ring-accent" value={gridFilters.dis} onChange={e => {setGridFilters({...gridFilters, dis: e.target.value, ciu:""}); setCurrentPage(1);}} disabled={!gridFilters.dep}>
                           <option value="">DIST</option>
                           {distritos.filter(d => !gridFilters.dep || d.dis_dep_cod === parseInt(gridFilters.dep)).map(d => <option key={d.dis_cod} value={d.dis_cod}>{d.dis_dsc}</option>)}
                       </select>
@@ -388,10 +451,10 @@ export default function ConfigLocationsPage() {
             <table className="w-full text-left">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-[11px] tracking-tight text-slate-400 font-bold uppercase">
-                  <th className="px-8 py-4 w-24 text-center">ID</th>
-                  <th className="px-8 py-4">Descripción / Nombre</th>
+                  {!isHidden(activeTab === 'zon' ? 'zon_id' : `${activeTab}_cod`) && <th className="px-8 py-4 w-24 text-center">ID</th>}
+                  {!isHidden(activeTab === 'zon' ? 'zon_nombre' : `${activeTab}_dsc`) && <th className="px-8 py-4">Descripción / Nombre</th>}
                   {activeTab !== "dep" && activeTab !== "zon" && <th className="px-8 py-4">Jerarquía</th>}
-                  {activeTab === "zon" && <th className="px-8 py-4 text-center">Color</th>}
+                  {activeTab === "zon" && !isHidden("zon_color") && <th className="px-8 py-4 text-center">Color</th>}
                   <th className="px-8 py-4 text-right">Acciones</th>
                 </tr>
               </thead>
@@ -405,8 +468,12 @@ export default function ConfigLocationsPage() {
                   const dsc = item.dep_dsc || item.dis_dsc || item.ciu_dsc || item.bar_dsc || item.zon_nombre;
                   return (
                     <tr key={`${activeTab}-${idx}`} className="hover:bg-slate-50/30 transition-colors">
-                      <td className="px-8 py-4 font-mono text-[11px] text-accent font-bold text-center">#{id}</td>
-                      <td className="px-8 py-4 font-bold text-slate-700 text-[14px]">{dsc}</td>
+                      {!isHidden(activeTab === 'zon' ? 'zon_id' : `${activeTab}_cod`) && (
+                        <td className="px-8 py-4 font-mono text-[11px] text-accent font-bold text-center">#{id}</td>
+                      )}
+                      {!isHidden(activeTab === 'zon' ? 'zon_nombre' : `${activeTab}_dsc`) && (
+                        <td className="px-8 py-4 font-bold text-slate-700 text-[14px]">{dsc}</td>
+                      )}
                       {activeTab !== "dep" && activeTab !== "zon" && (
                         <td className="px-8 py-4">
                           <span className="text-[11px] font-bold text-slate-400">
@@ -416,7 +483,7 @@ export default function ConfigLocationsPage() {
                           </span>
                         </td>
                       )}
-                      {activeTab === "zon" && (
+                      {activeTab === "zon" && !isHidden("zon_color") && (
                         <td className="px-8 py-4 text-center">
                            <div className="flex items-center justify-center gap-2">
                              <div className="w-4 h-4 rounded-full border border-slate-200" style={{ backgroundColor: item.zon_color }}></div>
@@ -469,26 +536,39 @@ export default function ConfigLocationsPage() {
       <CustomModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={`${editingItem ? 'Editar' : 'Nuevo/a'} ${tabs.find(t=>t.id===activeTab)?.label.slice(0,-1)}`}>
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
           {activeTab !== "dep" && activeTab !== "zon" && (
-            <div className="space-y-2"><Label>Departamento Padre</Label><select className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" value={formData.depCod} onChange={e => setFormData({...formData, depCod: e.target.value})} required><option value="">Seleccione...</option>{deps.map(d => <option key={d.dep_cod} value={d.dep_cod}>{d.dep_dsc}</option>)}</select></div>
+            <div className="space-y-2"><Label>Departamento Padre</Label><select className="flex h-12 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-950 font-medium outline-none focus:ring-2 focus:ring-accent shadow-sm" value={formData.depCod} onChange={e => setFormData({...formData, depCod: e.target.value})} required><option value="">Seleccione...</option>{deps.map(d => <option key={d.dep_cod} value={d.dep_cod}>{d.dep_dsc}</option>)}</select></div>
           )}
           {(activeTab === "ciu" || activeTab === "bar") && (
-            <div className="space-y-2"><Label>Distrito Padre</Label><select className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" value={formData.disCod} onChange={e => setFormData({...formData, disCod: e.target.value})} required disabled={!formData.depCod}><option value="">Seleccione...</option>{distritos.filter(d => d.dis_dep_cod === parseInt(formData.depCod)).map(d => <option key={d.dis_cod} value={d.dis_cod}>{d.dis_dsc}</option>)}</select></div>
+            <div className="space-y-2"><Label>Distrito Padre</Label><select className="flex h-12 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-950 font-medium outline-none focus:ring-2 focus:ring-accent shadow-sm" value={formData.disCod} onChange={e => setFormData({...formData, disCod: e.target.value})} required disabled={!formData.depCod}><option value="">Seleccione...</option>{distritos.filter(d => d.dis_dep_cod === parseInt(formData.depCod)).map(d => <option key={d.dis_cod} value={d.dis_cod}>{d.dis_dsc}</option>)}</select></div>
           )}
           {activeTab === "bar" && (
-            <div className="space-y-2"><Label>Ciudad Padre</Label><select className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" value={formData.ciuCod} onChange={e => setFormData({...formData, ciuCod: e.target.value})} required disabled={!formData.disCod}><option value="">Seleccione...</option>{ciudades.filter(c => c.ciu_dep_cod === parseInt(formData.depCod) && c.ciu_dis_cod === parseInt(formData.disCod)).map(c => <option key={c.ciu_cod} value={c.ciu_cod}>{c.ciu_dsc}</option>)}</select></div>
+            <div className="space-y-2"><Label>Ciudad Padre</Label><select className="flex h-12 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-950 font-medium outline-none focus:ring-2 focus:ring-accent shadow-sm" value={formData.ciuCod} onChange={e => setFormData({...formData, ciuCod: e.target.value})} required disabled={!formData.disCod}><option value="">Seleccione...</option>{ciudades.filter(c => c.ciu_dep_cod === parseInt(formData.depCod) && c.ciu_dis_cod === parseInt(formData.disCod)).map(c => <option key={c.ciu_cod} value={c.ciu_cod}>{c.ciu_dsc}</option>)}</select></div>
           )}
-          {activeTab === "zon" && (
+          {activeTab === "zon" && !isHidden("zon_color") && (
              <div className="space-y-2">
                 <Label>Color de la Zona</Label>
                 <div className="flex gap-2">
-                  <Input type="color" value={formData.color} onChange={e => setFormData({...formData, color: e.target.value})} className="w-12 h-10 p-1" />
-                  <Input value={formData.color} onChange={e => setFormData({...formData, color: e.target.value})} className="font-mono uppercase" />
+                  <Input type="color" value={formData.color} onChange={e => setFormData({...formData, color: e.target.value})} className="w-16 h-12 p-1 rounded-xl" disabled={isReadOnly("zon_color")} />
+                  <Input value={formData.color} onChange={e => setFormData({...formData, color: e.target.value})} className="h-12 rounded-xl text-slate-950 font-mono font-medium uppercase border-slate-200 focus:ring-accent" disabled={isReadOnly("zon_color")} />
                 </div>
              </div>
           )}
-          <div className="space-y-2"><Label>Nombre / Descripción</Label><Input value={formData.dsc} onChange={e => setFormData({...formData, dsc: e.target.value})} placeholder="Ingrese nombre..." required autoFocus /></div>
+          {!isHidden(activeTab === 'zon' ? 'zon_nombre' : `${activeTab}_dsc`) && (
+            <div className="space-y-2">
+              <Label>Nombre / Descripción</Label>
+              <Input 
+                className="h-12 rounded-xl text-slate-950 font-medium border-slate-200 focus:ring-accent shadow-sm" 
+                value={formData.dsc} 
+                onChange={e => setFormData({...formData, dsc: e.target.value})} 
+                placeholder="Ingrese nombre..." 
+                required 
+                autoFocus 
+                disabled={isReadOnly(activeTab === 'zon' ? 'zon_nombre' : `${activeTab}_dsc`)}
+              />
+            </div>
+          )}
           
-          {activeTab === "zon" && (
+          {activeTab === "zon" && !isHidden("zon_poligono") && (
             <div className="space-y-2">
               <Label className="flex justify-between items-center">
                 <span>Perímetro de la Zona (Polígono)</span>
@@ -505,7 +585,10 @@ export default function ConfigLocationsPage() {
             </div>
           )}
           <div className="flex gap-3 pt-6">
-            <Button type="submit" className="flex-1 bg-accent text-white font-bold h-12 rounded-2xl shadow-lg shadow-accent/20 flex gap-2 uppercase tracking-tighter transition-all hover:scale-[1.02] active:scale-95"><Save className="h-4 w-4" /> Guardar Registro</Button>
+            <Button type="submit" disabled={isSubmitting} className="flex-1 bg-accent text-white font-bold h-12 rounded-2xl shadow-lg shadow-accent/20 flex gap-2 uppercase tracking-tighter transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-70 disabled:scale-100">
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {isSubmitting ? "Guardando..." : "Guardar Registro"}
+            </Button>
             <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} className="flex-1 h-12 rounded-2xl font-bold uppercase tracking-tighter text-slate-500">Cancelar</Button>
           </div>
         </form>

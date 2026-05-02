@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { getPrisma } from "@/lib/prisma";
+const prisma = getPrisma("tenant_la_transportadora");
 
 export async function GET(request: Request) {
   try {
@@ -19,10 +20,10 @@ export async function GET(request: Request) {
         t.flu_tra_fecha,
         t.flu_tra_usuario,
         COALESCE(u.usuario_nombre, t.flu_tra_usuario) as usuario_nombre,
-        CASE WHEN t.flu_tra_geo IS NOT NULL THEN ST_Y(t.flu_tra_geo::geometry) ELSE NULL END as lat, 
-        CASE WHEN t.flu_tra_geo IS NOT NULL THEN ST_X(t.flu_tra_geo::geometry) ELSE NULL END as lng 
+        CASE WHEN t.flu_tra_geo IS NOT NULL THEN public.ST_Y(t.flu_tra_geo::public.geometry) ELSE NULL END as lat, 
+        CASE WHEN t.flu_tra_geo IS NOT NULL THEN public.ST_X(t.flu_tra_geo::public.geometry) ELSE NULL END as lng 
       FROM flujo_trazabilidad t
-      LEFT JOIN usuarios u ON t.flu_tra_usuario = u.usuario_email
+      LEFT JOIN public.usuarios u ON t.flu_tra_usuario = u.usuario_email
       WHERE 1=1
     `;
     const params: any[] = [];

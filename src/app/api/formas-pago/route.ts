@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { getPrisma, prismaPublic } from "@/lib/prisma";
+const prisma = getPrisma("tenant_la_transportadora");
 
 export async function GET() {
   try {
@@ -7,13 +8,13 @@ export async function GET() {
       orderBy: { forma_pago_id: "asc" }
     });
 
-    // Resolver nombres de usuarios
+    // Resolver nombres de usuarios desde el esquema público
     const emails = Array.from(new Set([
       ...data.map(i => i.forma_pago_usuario_alta),
       ...data.map(i => i.forma_pago_usuario_mod)
     ].filter(Boolean)));
 
-    const users = await prisma.usuario.findMany({
+    const users = await prismaPublic.usuario.findMany({
       where: { usuario_email: { in: emails as string[] } },
       select: { usuario_email: true, usuario_nombre: true }
     });

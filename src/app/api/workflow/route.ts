@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { getPrisma, prismaPublic } from "@/lib/prisma";
+const prisma = getPrisma("tenant_la_transportadora");
 
 export async function GET(request: Request) {
   try {
@@ -12,28 +13,39 @@ export async function GET(request: Request) {
       where,
       include: {
         objeto: true,
-        perfil: true,
         estado_actual: true,
         estado_sig: true
       },
       orderBy: { flu_conf_id: "asc" }
     });
 
-    // Resolver nombres de usuarios
+    // 1. Resolver nombres de usuarios (public schema)
     const emails = Array.from(new Set([
       ...data.map((i: any) => i.flu_conf_usuario_alta),
       ...data.map((i: any) => i.flu_conf_usuario_mod)
     ].filter(Boolean)));
 
-    const users = await prisma.usuario.findMany({
+    const users = await prismaPublic.usuario.findMany({
       where: { usuario_email: { in: emails as string[] } },
       select: { usuario_email: true, usuario_nombre: true }
     });
 
     const userMap = Object.fromEntries(users.map(u => [u.usuario_email, u.usuario_nombre]));
 
+    // 2. Resolver nombres de perfiles (public schema) - MANUAL JOIN
+    const perfilIds = Array.from(new Set(data.map((i: any) => i.flu_conf_perfil_cod)));
+    const perfiles = await prismaPublic.perfil.findMany({
+      where: { perfil_cod: { in: perfilIds } },
+      select: { perfil_cod: true, perfil_nombre: true }
+    });
+    const perfilMap = Object.fromEntries(perfiles.map(p => [p.perfil_cod, p.perfil_nombre]));
+
     const enrichedData = data.map((item: any) => ({
       ...item,
+      perfil: { 
+        perfil_cod: item.flu_conf_perfil_cod, 
+        perfil_nombre: perfilMap[item.flu_conf_perfil_cod] || "DESCONOCIDO" 
+      },
       usuario_alta_nombre: userMap[item.flu_conf_usuario_alta] || item.flu_conf_usuario_alta,
       usuario_mod_nombre: item.flu_conf_usuario_mod ? (userMap[item.flu_conf_usuario_mod] || item.flu_conf_usuario_mod) : null
     }));
@@ -49,6 +61,15 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { objId, perfilCod, estActId, estSigId, esInicial, etiqueta, usuario } = body;
+
+    // VALIDACIÓN DE INTEGRIDAD A NIVEL DE APLICACIÓN
+    const perfilExists = await prismaPublic.perfil.findUnique({
+      where: { perfil_cod: parseInt(perfilCod) }
+    });
+    
+    if (!perfilExists) {
+      return NextResponse.json({ error: "El perfil seleccionado no es válido o no existe en el sistema central." }, { status: 400 });
+    }
 
     // Calcular el siguiente ID (+1 del máximo actual)
     const maxItem = await prisma.flujoEstadoConfig.aggregate({
